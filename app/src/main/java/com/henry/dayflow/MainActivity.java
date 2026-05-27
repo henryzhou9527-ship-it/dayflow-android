@@ -8,11 +8,11 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.net.Uri;
 import android.media.MediaPlayer;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
-import android.net.Uri;
 import android.media.projection.MediaProjectionManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -38,8 +38,12 @@ import android.graphics.drawable.GradientDrawable;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -48,6 +52,7 @@ import java.util.Map;
 public final class MainActivity extends Activity {
     private static final int REQ_MEDIA_PROJECTION = 1001;
     private static final int REQ_NOTIFICATIONS = 1002;
+    private static final int REQ_EXPORT_MARKDOWN = 1003;
 
     private DayflowDatabase db;
     private DayflowPrefs prefs;
@@ -58,6 +63,8 @@ public final class MainActivity extends Activity {
     private LinearLayout content;
     private LinearLayout tabRow;
     private TextView statusText;
+    private String pendingExportMarkdown;
+    private String pendingExportLabel;
 
     @Override
     protected void onCreate(Bundle bundle) {
@@ -87,6 +94,15 @@ public final class MainActivity extends Activity {
                 startService(service);
             }
             setStatus("Recording started. A full Dayflow card appears after the first 15-minute batch.");
+        }
+        if (requestCode == REQ_EXPORT_MARKDOWN) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null && pendingExportMarkdown != null) {
+                writePendingExport(data.getData());
+            } else {
+                pendingExportMarkdown = null;
+                pendingExportLabel = null;
+                setStatus("Export canceled.");
+            }
         }
     }
 
@@ -1054,23 +1070,12 @@ public final class MainActivity extends Activity {
         Button reprocess = pillButton("Reprocess selected day");
         reprocess.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                db.deleteTimelineDay(selectedDay);
-                setStatus("Reprocessing day...");
-                new Thread(new Runnable() {
-                    @Override public void run() {
-                        new AnalysisEngine(MainActivity.this).processNow();
-                        runOnUiThread(new Runnable() { @Override public void run() { setStatus("Day reprocessed."); refresh(); }});
-                    }
-                }).start();
+                confirmReprocessDay(selectedDay);
             }
         });
         panel.addView(reprocess, new LinearLayout.LayoutParams(-1, dp(44)));
 
-        Button export = pillButton("Export today as Markdown");
-        export.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { copyText("Dayflow export", db.exportMarkdown(selectedDay)); }
-        });
-        panel.addView(export, new LinearLayout.LayoutParams(-1, dp(44)));
+        addDataExportSettings(panel);
 
         Button deleteDay = smallButton("Delete selected day cards");
         deleteDay.setOnClickListener(new View.OnClickListener() {
@@ -1213,6 +1218,115 @@ public final class MainActivity extends Activity {
             panel.addView(blockedSwitch(app));
         }
         content.addView(panel);
+    }
+
+    private void addDataExportSettings(LinearLayout panel) {
+        panel.addView(text("Export your data", 13, Colors.MUTED, true));
+        panel.addView(text("Use Markdown exports to archive in Notion, share with teammates, or paste into ChatGPT, Claude, or Gemini for deeper analysis.", 14, Colors.TEXT, false));
+
+        final EditText exportFrom = field("From yyyy-MM-dd", selectedDay, true);
+        final EditText exportTo = field("To yyyy-MM-dd", selectedDay, true);
+        LinearLayout exportDates = row();
+        exportDates.addView(exportFrom, new LinearLayout.LayoutParams(0, dp(54), 1));
+        exportDates.addView(exportTo, new LinearLayout.LayoutParams(0, dp(54), 1));
+        panel.addView(exportDates);
+
+        LinearLayout exportActions = row();
+        Button copy = smallButton("Copy");
+        copy.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                String from = normalizedDay(exportFrom.getText().toString(), selectedDay);
+                String to = normalizedDay(exportTo.getText().toString(), selectedDay);
+                if (from.compareTo(to) > 0) {
+                    setStatus("Export start must be on or before end.");
+                    return;
+                }
+                copyText("Dayflow export", db.exportMarkdownRange(from, to));
+            }
+        });
+        Button save = pillButton("Export as Markdown");
+        save.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                String from = normalizedDay(exportFrom.getText().toString(), selectedDay);
+                String to = normalizedDay(exportTo.getText().toString(), selectedDay);
+                if (from.compareTo(to) > 0) {
+                    setStatus("Export start must be on or before end.");
+                    return;
+                }
+                startMarkdownExport(from, to);
+            }
+        });
+        exportActions.addView(copy, new LinearLayout.LayoutParams(dp(96), dp(44)));
+        exportActions.addView(save, new LinearLayout.LayoutParams(0, dp(44), 1));
+        panel.addView(exportActions);
+
+        panel.addView(text("Reprocess day", 13, Colors.MUTED, true));
+        panel.addView(text("Clears existing cards and observations for one timeline day, then reruns analysis from the saved screenshots. This can consume API calls when Gemini or Ollama is selected.", 14, Colors.TEXT, false));
+        final EditText reprocessDay = field("Day yyyy-MM-dd", selectedDay, true);
+        panel.addView(reprocessDay, new LinearLayout.LayoutParams(-1, dp(54)));
+        Button reprocessExact = pillButton("Reprocess day");
+        reprocessExact.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                confirmReprocessDay(normalizedDay(reprocessDay.getText().toString(), selectedDay));
+            }
+        });
+        panel.addView(reprocessExact, new LinearLayout.LayoutParams(-1, dp(44)));
+    }
+
+    private void startMarkdownExport(String fromDay, String toDay) {
+        pendingExportMarkdown = db.exportMarkdownRange(fromDay, toDay);
+        pendingExportLabel = "Dayflow timeline " + fromDay + " to " + toDay + ".md";
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("text/markdown")
+                .putExtra(Intent.EXTRA_TITLE, pendingExportLabel);
+        try {
+            startActivityForResult(intent, REQ_EXPORT_MARKDOWN);
+            setStatus("Choose where to save the Markdown export.");
+        } catch (Exception ignored) {
+            copyText("Dayflow export", pendingExportMarkdown);
+            pendingExportMarkdown = null;
+            pendingExportLabel = null;
+            setStatus("No file picker available, copied export instead.");
+        }
+    }
+
+    private void writePendingExport(Uri uri) {
+        try (OutputStream stream = getContentResolver().openOutputStream(uri)) {
+            if (stream == null) throw new IOException("No output stream");
+            stream.write(pendingExportMarkdown.getBytes(StandardCharsets.UTF_8));
+            setStatus("Exported " + pendingExportLabel + ".");
+        } catch (Exception error) {
+            setStatus("Export failed: " + shortText(error.getMessage(), 80));
+        } finally {
+            pendingExportMarkdown = null;
+            pendingExportLabel = null;
+        }
+    }
+
+    private void confirmReprocessDay(final String day) {
+        new AlertDialog.Builder(this)
+                .setTitle("Reprocess " + day + "?")
+                .setMessage("Existing cards and observations for this timeline day will be rebuilt from saved screenshots. AI providers may make new API calls.")
+                .setPositiveButton("Reprocess", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        setStatus("Reprocessing " + day + "...");
+                        new Thread(new Runnable() {
+                            @Override public void run() {
+                                final int count = new AnalysisEngine(MainActivity.this).reprocessDay(day);
+                                runOnUiThread(new Runnable() {
+                                    @Override public void run() {
+                                        selectedDay = day;
+                                        setStatus(count > 0 ? "Reprocessed " + count + " batches." : "No existing batches found; scanned for new screenshots.");
+                                        refresh();
+                                    }
+                                });
+                            }
+                        }, "dayflow-reprocess").start();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private void addJournalReminderSettings(LinearLayout panel) {
@@ -1870,6 +1984,22 @@ public final class MainActivity extends Activity {
             return Integer.parseInt(value == null ? "" : value.trim());
         } catch (NumberFormatException ignored) {
             return fallback;
+        }
+    }
+
+    private static String normalizedDay(String value, String fallback) {
+        SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+        format.setLenient(false);
+        try {
+            Date date = format.parse(value == null ? "" : value.trim());
+            return format.format(date);
+        } catch (Exception ignored) {
+            try {
+                Date date = format.parse(fallback == null ? "" : fallback.trim());
+                return format.format(date);
+            } catch (Exception ignoredAgain) {
+                return TimeUtil.dayKey(System.currentTimeMillis());
+            }
         }
     }
 

@@ -20,7 +20,8 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Redacts screenshots for blocked apps while still preserving timeline continuity.
 - Supports timed/indefinite recording pauses and shows saved screenshots plus playable timelapses inside review cards for frame-by-frame context.
 - Weekly view supports Monday-based week navigation, focus heatmaps, time distribution, top-level updates, next-step suggestions, and application interaction summaries.
-- Exports the current day timeline as Markdown.
+- Exports any date range as Markdown through Android's document picker, with clipboard fallback.
+- Reprocesses a specific timeline day by clearing old cards/observations and re-analyzing the original saved batches.
 - Keeps the Dayflow visual language: bundled Dayflow fonts/assets, warm cream/orange gradients, serif headings, soft white panels, compact timeline cards, heatmaps, and productivity dashboards.
 
 ## APK

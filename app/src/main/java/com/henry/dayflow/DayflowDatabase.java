@@ -7,9 +7,12 @@ import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 
 import java.io.File;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -498,20 +501,19 @@ final class DayflowDatabase extends SQLiteOpenHelper {
     }
 
     synchronized String exportMarkdown(String day) {
+        return markdownForDay(day, fetchTimelineCards(day));
+    }
+
+    synchronized String exportMarkdownRange(String fromDay, String toDay) {
         StringBuilder sb = new StringBuilder();
-        sb.append("## Dayflow timeline · ").append(day).append("\n\n");
-        for (TimelineCard card : fetchTimelineCards(day)) {
-            sb.append("- **")
-                    .append(TimeUtil.timeLabel(card.startMs))
-                    .append(" - ")
-                    .append(TimeUtil.timeLabel(card.endMs))
-                    .append("** · ")
-                    .append(card.category)
-                    .append(" · ")
-                    .append(card.title)
-                    .append("\n  ")
-                    .append(card.summary == null ? "" : card.summary)
-                    .append("\n");
+        String start = minDay(fromDay, toDay);
+        String end = maxDay(fromDay, toDay);
+        String cursor = start;
+        int guard = 0;
+        while (cursor.compareTo(end) <= 0 && guard++ < 370) {
+            if (sb.length() > 0) sb.append("\n\n---\n\n");
+            sb.append(markdownForDay(cursor, fetchTimelineCards(cursor)));
+            cursor = nextDay(cursor);
         }
         return sb.toString();
     }
@@ -757,6 +759,36 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         getWritableDatabase().update("timeline_cards", values, "day = ?", new String[]{day});
     }
 
+    synchronized List<Long> batchIdsForDay(String day) {
+        long start = TimeUtil.dayStartMs(day);
+        long end = start + TimeUtil.DAY;
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT id FROM analysis_batches WHERE batch_start_ts >= ? AND batch_end_ts <= ? ORDER BY batch_start_ts ASC",
+                new String[]{String.valueOf(start), String.valueOf(end)});
+        try {
+            List<Long> ids = new ArrayList<>();
+            while (c.moveToNext()) ids.add(c.getLong(0));
+            return ids;
+        } finally {
+            c.close();
+        }
+    }
+
+    synchronized void resetBatchForReprocess(long batchId) {
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            db.delete("observations", "batch_id = ?", new String[]{String.valueOf(batchId)});
+            ContentValues values = new ContentValues();
+            values.put("status", "pending");
+            values.putNull("reason");
+            db.update("analysis_batches", values, "id = ?", new String[]{String.valueOf(batchId)});
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+    }
+
     synchronized int purgeScreenshotsOlderThan(long cutoffMs) {
         Cursor c = getReadableDatabase().rawQuery(
                 "SELECT file_path FROM screenshots WHERE captured_at < ? AND is_deleted = 0",
@@ -815,6 +847,81 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         card.subcategory = c.getString(c.getColumnIndexOrThrow("subcategory"));
         card.metadata = c.getString(c.getColumnIndexOrThrow("metadata"));
         return card;
+    }
+
+    private static String markdownForDay(String day, List<TimelineCard> cards) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("## Dayflow timeline · ").append(day).append("\n\n");
+        if (cards.isEmpty()) {
+            sb.append("_No timeline activities were recorded for this day._\n");
+            return sb.toString();
+        }
+        int index = 1;
+        for (TimelineCard card : cards) {
+            sb.append(index++)
+                    .append(". **")
+                    .append(TimeUtil.timeLabel(card.startMs))
+                    .append(" - ")
+                    .append(TimeUtil.timeLabel(card.endMs))
+                    .append(" — ")
+                    .append(clean(card.title))
+                    .append("**\n");
+            if (card.category != null && !card.category.trim().isEmpty()) {
+                sb.append("   - _").append(clean(card.category)).append("_\n");
+            }
+            if (card.summary != null && !card.summary.trim().isEmpty()) {
+                sb.append("   - Summary: ").append(clean(card.summary)).append("\n");
+            }
+            if (card.detailedSummary != null
+                    && !card.detailedSummary.trim().isEmpty()
+                    && !card.detailedSummary.trim().equals(card.summary == null ? "" : card.summary.trim())) {
+                sb.append("   - Details: ").append(clean(card.detailedSummary)).append("\n");
+            }
+            sb.append("\n");
+        }
+        return sb.toString().trim();
+    }
+
+    private static String clean(String value) {
+        if (value == null) return "";
+        return value.trim().replace("\r", "").replace("\n", "\n      ");
+    }
+
+    private static String minDay(String left, String right) {
+        String a = normalizeDay(left);
+        String b = normalizeDay(right);
+        return a.compareTo(b) <= 0 ? a : b;
+    }
+
+    private static String maxDay(String left, String right) {
+        String a = normalizeDay(left);
+        String b = normalizeDay(right);
+        return a.compareTo(b) >= 0 ? a : b;
+    }
+
+    private static String normalizeDay(String day) {
+        try {
+            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+            format.setLenient(false);
+            Date date = format.parse(day == null ? "" : day.trim());
+            return format.format(date);
+        } catch (Exception ignored) {
+            return TimeUtil.dayKey(System.currentTimeMillis());
+        }
+    }
+
+    private static String nextDay(String day) {
+        try {
+            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+            format.setLenient(false);
+            Date date = format.parse(day);
+            Calendar calendar = Calendar.getInstance();
+            calendar.setTime(date);
+            calendar.add(Calendar.DATE, 1);
+            return format.format(calendar.getTime());
+        } catch (Exception ignored) {
+            return TimeUtil.dayKey(System.currentTimeMillis());
+        }
     }
 
     private static void addColumnIfMissing(SQLiteDatabase db, String table, String column, String type) {

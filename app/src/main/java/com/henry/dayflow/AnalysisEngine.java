@@ -27,6 +27,20 @@ final class AnalysisEngine {
         }
     }
 
+    int reprocessDay(String day) {
+        List<Long> batchIds = db.batchIdsForDay(day);
+        db.deleteTimelineDay(day);
+        if (batchIds.isEmpty()) {
+            processNow();
+            return 0;
+        }
+        for (Long batchId : batchIds) {
+            db.resetBatchForReprocess(batchId);
+            analyzeBatch(batchId);
+        }
+        return batchIds.size();
+    }
+
     void analyzeBatch(long batchId) {
         List<ScreenshotRecord> screenshots = db.screenshotsForBatch(batchId);
         if (screenshots.isEmpty()) {
