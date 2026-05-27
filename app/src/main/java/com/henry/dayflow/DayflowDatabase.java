@@ -542,6 +542,30 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         return clipboardTextForDay(day, fetchTimelineCards(day));
     }
 
+    synchronized String timelineClipboardTextForWeek(long weekStartMs) {
+        long weekEndMs = weekStartMs + 7 * TimeUtil.DAY;
+        List<TimelineCard> cards = fetchTimelineCardsRange(weekStartMs, weekEndMs);
+        StringBuilder sb = new StringBuilder();
+        sb.append("Dayflow timeline - ").append(TimeUtil.weekLabel(weekStartMs)).append("\n\n");
+        if (cards.isEmpty()) {
+            sb.append("No timeline activities were recorded for this week.");
+            return sb.toString();
+        }
+        String currentDay = "";
+        List<TimelineCard> dayCards = new ArrayList<>();
+        for (TimelineCard card : cards) {
+            String day = TimeUtil.dayKey(card.startMs);
+            if (!currentDay.isEmpty() && !currentDay.equals(day)) {
+                appendWeekDayClipboard(sb, currentDay, dayCards);
+                dayCards.clear();
+            }
+            currentDay = day;
+            dayCards.add(card);
+        }
+        if (!currentDay.isEmpty()) appendWeekDayClipboard(sb, currentDay, dayCards);
+        return sb.toString().trim();
+    }
+
     synchronized String exportMarkdownRange(String fromDay, String toDay) {
         StringBuilder sb = new StringBuilder();
         String start = minDay(fromDay, toDay);
@@ -1187,6 +1211,27 @@ final class DayflowDatabase extends SQLiteOpenHelper {
             sb.append("\n");
         }
         return sb.toString().trim();
+    }
+
+    private static void appendWeekDayClipboard(StringBuilder sb, String day, List<TimelineCard> cards) {
+        if (sb.length() > 0 && sb.charAt(sb.length() - 1) != '\n') sb.append("\n");
+        sb.append("## ").append(day).append("\n");
+        int index = 1;
+        for (TimelineCard card : cards) {
+            sb.append(index++)
+                    .append(". ")
+                    .append(TimeUtil.timeLabel(card.startMs))
+                    .append(" - ")
+                    .append(TimeUtil.timeLabel(card.endMs))
+                    .append(" - ")
+                    .append(clean(card.title))
+                    .append("\n");
+            if (card.category != null && !card.category.trim().isEmpty()) {
+                sb.append("   ").append(clean(card.category)).append("\n");
+            }
+            appendClipboardBlock(sb, "Summary", card.summary);
+        }
+        sb.append("\n");
     }
 
     private static String clipboardTextForDay(String day, List<TimelineCard> cards) {

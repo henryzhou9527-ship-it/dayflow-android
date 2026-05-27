@@ -19,8 +19,9 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Daily goals include a native review/setup flow with yesterday's goal review, last-week averages, focus/distraction category assignment, skip, and persistence.
 - Daily includes the original-style data readiness gate: 5 hours of analyzed 15-minute batches, progress text, permission/recording/analyze actions, provider selection, and persisted unlock.
 - Timeline and review cards support manual category reassignment with Dayflow-style category pills, single-card deletion, persisted summary feedback, and Dayflow-style cards-to-review prompts.
-- Timeline includes quick copy/export actions that mirror Dayflow's copy timeline workflow.
+- Timeline includes Day/Week mode switching, native date picking, quick copy/export actions, and week-level clipboard/export output that mirror Dayflow's timeline workflow while staying touch-first on Android.
 - Timeline cards include category/time pills, screenshot preview thumbnails, SUMMARY/DETAILED SUMMARY sections, and tap-to-play timelapse entry points.
+- Timeline week mode renders a seven-day 4 AM-to-4 AM grid with tappable activity cards and day columns, giving the original week timeline behavior an Android-native inspector flow.
 - Timeline and review cards can generate, save, regenerate, and play MP4 timelapse summaries from the card's captured screenshots.
 - Daily view surfaces day-goal progress, focus summaries, distraction summaries, an original-style touch workflow grid with dynamic time windows, totals, stats, distraction markers, and editable Dayflow-style standup cards for highlights, tasks, and blockers.
 - Daily standups are stored by day and can be saved or regenerated through the selected Gemini/Ollama provider with local fallback.

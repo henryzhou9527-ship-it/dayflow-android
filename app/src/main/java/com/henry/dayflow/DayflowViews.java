@@ -628,6 +628,195 @@ final class TimelineCanvasView extends View {
     }
 }
 
+final class TimelineWeekCanvasView extends View {
+    interface Listener {
+        void onCardTapped(TimelineCard card);
+        void onDayTapped(int dayIndex);
+    }
+
+    private static final String[] DAYS = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final List<CardHit> hits = new ArrayList<>();
+    private List<TimelineCard> cards = new ArrayList<>();
+    private long weekStartMs = TimeUtil.weekStartMs(System.currentTimeMillis());
+    private Listener listener;
+
+    TimelineWeekCanvasView(Context context) {
+        super(context);
+        setMinimumHeight(dp(740));
+        setWillNotDraw(false);
+    }
+
+    void setCards(long weekStartMs, List<TimelineCard> cards) {
+        this.weekStartMs = weekStartMs;
+        this.cards = cards == null ? new ArrayList<TimelineCard>() : cards;
+        invalidate();
+    }
+
+    void setListener(Listener listener) {
+        this.listener = listener;
+    }
+
+    @Override protected void onDraw(Canvas canvas) {
+        hits.clear();
+        float w = getWidth();
+        float h = getHeight();
+        drawPanel(canvas, 0, 0, w, h);
+        drawSerif(canvas, "Week timeline", dp(18), dp(36), dp(24), Colors.TEXT);
+        drawSans(canvas, "Tap a card to inspect it, or tap an empty day column to open that day.", dp(18), dp(58), dp(11), Colors.MUTED);
+
+        float labelW = dp(36);
+        float left = dp(14);
+        float top = dp(86);
+        float bottom = h - dp(18);
+        float gridLeft = left + labelW;
+        float gridW = Math.max(1, w - gridLeft - dp(12));
+        float dayW = gridW / 7f;
+        float gridH = Math.max(dp(480), bottom - top);
+        float hourH = gridH / 24f;
+
+        drawDayHeaders(canvas, gridLeft, dp(70), dayW);
+        drawGrid(canvas, left, gridLeft, top, gridW, gridH, dayW, hourH);
+
+        if (cards.isEmpty()) {
+            drawSerif(canvas, "No cards yet", gridLeft + dp(12), top + dp(72), dp(24), Colors.TEXT);
+            drawSans(canvas, "The week view fills in as Dayflow analyzes local screenshots.", gridLeft + dp(12), top + dp(100), dp(12), Colors.MUTED);
+            return;
+        }
+
+        for (TimelineCard card : cards) {
+            drawCardSegments(canvas, card, gridLeft, top, dayW, hourH);
+        }
+    }
+
+    @Override public boolean onTouchEvent(MotionEvent event) {
+        if (event.getActionMasked() != MotionEvent.ACTION_UP) return true;
+        for (int i = hits.size() - 1; i >= 0; i--) {
+            CardHit hit = hits.get(i);
+            if (hit.rect.contains(event.getX(), event.getY())) {
+                if (listener != null) listener.onCardTapped(hit.card);
+                return true;
+            }
+        }
+        float labelW = dp(36);
+        float gridLeft = dp(14) + labelW;
+        float gridW = Math.max(1, getWidth() - gridLeft - dp(12));
+        float dayW = gridW / 7f;
+        float top = dp(86);
+        float bottom = getHeight() - dp(18);
+        if (event.getX() >= gridLeft && event.getX() <= gridLeft + gridW && event.getY() >= top && event.getY() <= bottom) {
+            int day = Math.max(0, Math.min(6, (int) ((event.getX() - gridLeft) / dayW)));
+            if (listener != null) listener.onDayTapped(day);
+            return true;
+        }
+        return true;
+    }
+
+    private void drawDayHeaders(Canvas canvas, float gridLeft, float y, float dayW) {
+        for (int day = 0; day < 7; day++) {
+            float x = gridLeft + day * dayW;
+            String dayKey = TimeUtil.dayKey(weekStartMs + day * TimeUtil.DAY + TimeUtil.HOUR);
+            drawSans(canvas, DAYS[day], x + dp(6), y, dp(12), Colors.TEXT);
+            drawSans(canvas, dayKey.substring(5), x + dp(6), y + dp(18), dp(10), Colors.MUTED);
+        }
+    }
+
+    private void drawGrid(Canvas canvas, float left, float gridLeft, float top, float gridW, float gridH, float dayW, float hourH) {
+        paint.setStrokeWidth(1f);
+        for (int day = 0; day <= 7; day++) {
+            float x = gridLeft + day * dayW;
+            paint.setColor(ColorUtils.withAlpha(Colors.STROKE, day == 0 || day == 7 ? 190 : 90));
+            canvas.drawLine(x, top, x, top + gridH, paint);
+        }
+        for (int hour = 0; hour <= 24; hour++) {
+            float y = top + hour * hourH;
+            paint.setColor(ColorUtils.withAlpha(Colors.MUTED, hour % 4 == 0 ? 86 : 36));
+            canvas.drawLine(gridLeft, y, gridLeft + gridW, y, paint);
+            if (hour % 2 == 0) {
+                String label = String.format(LocaleSafe.US, "%02d", (hour + 4) % 24);
+                drawSans(canvas, label, left, y + dp(4), dp(9), Colors.MUTED);
+            }
+        }
+    }
+
+    private void drawCardSegments(Canvas canvas, TimelineCard card, float gridLeft, float top, float dayW, float hourH) {
+        for (int day = 0; day < 7; day++) {
+            long dayStart = weekStartMs + day * TimeUtil.DAY;
+            long dayEnd = dayStart + TimeUtil.DAY;
+            long start = Math.max(card.startMs, dayStart);
+            long end = Math.min(card.endMs, dayEnd);
+            if (end <= start) continue;
+            float segmentTop = top + ((start - dayStart) / (float) TimeUtil.HOUR) * hourH;
+            float segmentBottom = top + ((end - dayStart) / (float) TimeUtil.HOUR) * hourH;
+            segmentBottom = Math.max(segmentTop + dp(18), segmentBottom);
+            RectF rect = new RectF(
+                    gridLeft + day * dayW + dp(3),
+                    segmentTop + dp(1),
+                    gridLeft + (day + 1) * dayW - dp(3),
+                    segmentBottom - dp(1));
+            int categoryColor = Colors.colorForCategory(card.category);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(ColorUtils.withAlpha(categoryColor, 56));
+            canvas.drawRoundRect(rect, dp(6), dp(6), paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(1.1f);
+            paint.setColor(ColorUtils.withAlpha(categoryColor, 190));
+            canvas.drawRoundRect(rect, dp(6), dp(6), paint);
+            paint.setStyle(Paint.Style.FILL);
+
+            canvas.save();
+            canvas.clipRect(rect);
+            drawSans(canvas, fit(card.title, rect.width(), dp(10)), rect.left + dp(5), rect.top + dp(13), dp(10), Colors.TEXT);
+            if (rect.height() > dp(42)) {
+                drawSans(canvas, TimeUtil.shortDuration(end - start), rect.left + dp(5), rect.top + dp(28), dp(9), Colors.MUTED);
+            }
+            canvas.restore();
+            hits.add(new CardHit(new RectF(rect), card));
+        }
+    }
+
+    private String fit(String raw, float width, float textSize) {
+        String value = raw == null || raw.trim().isEmpty() ? "Untitled" : raw.trim();
+        int maxChars = Math.max(4, (int) (width / Math.max(1, textSize * 0.58f)));
+        if (value.length() <= maxChars) return value;
+        return value.substring(0, Math.max(1, maxChars - 1)) + "...";
+    }
+
+    private void drawPanel(Canvas c, float x, float y, float w, float h) {
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(Colors.CARD);
+        c.drawRoundRect(new RectF(x, y, x + w, y + h), dp(16), dp(16), paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(1.2f);
+        paint.setColor(Colors.STROKE);
+        c.drawRoundRect(new RectF(x + 1, y + 1, x + w - 1, y + h - 1), dp(16), dp(16), paint);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private int dp(float v) { return (int) (v * getResources().getDisplayMetrics().density + 0.5f); }
+    private void drawSerif(Canvas c, String text, float x, float y, float size, int color) {
+        paint.setTypeface(DayflowType.serif(getContext()));
+        paint.setTextSize(size);
+        paint.setColor(color);
+        c.drawText(text, x, y, paint);
+    }
+    private void drawSans(Canvas c, String text, float x, float y, float size, int color) {
+        paint.setTypeface(DayflowType.sans(getContext(), false));
+        paint.setTextSize(size);
+        paint.setColor(color);
+        c.drawText(text, x, y, paint);
+    }
+
+    private static final class CardHit {
+        final RectF rect;
+        final TimelineCard card;
+        CardHit(RectF rect, TimelineCard card) {
+            this.rect = rect;
+            this.card = card;
+        }
+    }
+}
+
 final class DailyWorkflowView extends View {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final List<TouchTarget> touchTargets = new ArrayList<>();

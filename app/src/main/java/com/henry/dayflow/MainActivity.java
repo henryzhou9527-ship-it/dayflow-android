@@ -3,6 +3,7 @@ package com.henry.dayflow;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.DatePickerDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -25,6 +26,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.CompoundButton;
+import android.widget.DatePicker;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
@@ -67,6 +69,7 @@ public final class MainActivity extends Activity {
     private String selectedTab = "Timeline";
     private String selectedDay;
     private long selectedWeekStartMs;
+    private boolean timelineWeekMode;
     private LinearLayout content;
     private LinearLayout tabRow;
     private TextView statusText;
@@ -502,32 +505,17 @@ public final class MainActivity extends Activity {
             content.addView(paused);
         }
 
-        LinearLayout actions = row();
-        Button previous = smallButton("‹");
-        previous.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) {
-                selectedDay = TimeUtil.dayKey(TimeUtil.dayStartMs(selectedDay) - TimeUtil.HOUR);
-                refresh();
-            }
-        });
-        Button today = smallButton("Today · " + selectedDay);
-        today.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { selectedDay = TimeUtil.dayKey(System.currentTimeMillis()); refresh(); }
-        });
-        Button next = smallButton("›");
-        next.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) {
-                selectedDay = TimeUtil.dayKey(TimeUtil.dayStartMs(selectedDay) + TimeUtil.DAY + TimeUtil.HOUR);
-                refresh();
-            }
-        });
-        actions.addView(previous, new LinearLayout.LayoutParams(dp(44), dp(38)));
-        actions.addView(today, new LinearLayout.LayoutParams(0, dp(38), 1));
-        actions.addView(next, new LinearLayout.LayoutParams(dp(44), dp(38)));
-        content.addView(actions);
+        selectedWeekStartMs = TimeUtil.weekStartMs(TimeUtil.dayStartMs(selectedDay) + TimeUtil.HOUR);
+        content.addView(timelineNavigationControls(), new LinearLayout.LayoutParams(-1, dp(40)));
+        content.addView(timelineModeControls(), new LinearLayout.LayoutParams(-1, dp(42)));
 
         content.addView(timelineQuickActions(), new LinearLayout.LayoutParams(-1, dp(44)));
         addGap(8);
+
+        if (timelineWeekMode) {
+            renderTimelineWeek();
+            return;
+        }
 
         DashboardCanvasView dashboard = new DashboardCanvasView(this);
         dashboard.setMetrics(metrics);
@@ -545,6 +533,216 @@ public final class MainActivity extends Activity {
         content.addView(timeline, new LinearLayout.LayoutParams(-1, dp(24 * 92)));
         addGap(14);
         renderCardList(cards);
+    }
+
+    private LinearLayout timelineNavigationControls() {
+        LinearLayout actions = row();
+        Button previous = smallButton("<");
+        previous.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                navigateTimeline(timelineWeekMode ? -7 : -1);
+            }
+        });
+        Button date = smallButton(timelineHeaderLabel());
+        date.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { showTimelineDatePicker(); }
+        });
+        Button next = smallButton(">");
+        next.setEnabled(canNavigateTimelineForward());
+        next.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                navigateTimeline(timelineWeekMode ? 7 : 1);
+            }
+        });
+        actions.addView(previous, new LinearLayout.LayoutParams(dp(44), dp(38)));
+        actions.addView(date, new LinearLayout.LayoutParams(0, dp(38), 1));
+        actions.addView(next, new LinearLayout.LayoutParams(dp(44), dp(38)));
+        return actions;
+    }
+
+    private LinearLayout timelineModeControls() {
+        LinearLayout modes = row();
+        Button day = timelineWeekMode ? smallButton("Day") : pillButton("Day");
+        day.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                timelineWeekMode = false;
+                refresh();
+            }
+        });
+        Button week = timelineWeekMode ? pillButton("Week") : smallButton("Week");
+        week.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                timelineWeekMode = true;
+                selectedWeekStartMs = TimeUtil.weekStartMs(TimeUtil.dayStartMs(selectedDay) + TimeUtil.HOUR);
+                refresh();
+            }
+        });
+        Button today = smallButton(timelineWeekMode ? "This week" : "Today");
+        today.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                selectedDay = TimeUtil.dayKey(System.currentTimeMillis());
+                selectedWeekStartMs = TimeUtil.weekStartMs(System.currentTimeMillis());
+                refresh();
+            }
+        });
+        modes.addView(day, new LinearLayout.LayoutParams(0, dp(38), 1));
+        modes.addView(week, new LinearLayout.LayoutParams(0, dp(38), 1));
+        modes.addView(today, new LinearLayout.LayoutParams(0, dp(38), 1));
+        return modes;
+    }
+
+    private void renderTimelineWeek() {
+        final long weekStart = selectedWeekStartMs;
+        final long weekEnd = weekStart + 7 * TimeUtil.DAY;
+        final List<TimelineCard> weekCards = db.fetchTimelineCardsRange(weekStart, weekEnd);
+        DashboardMetrics weekMetrics = metricsFor(weekCards);
+
+        LinearLayout summary = panel();
+        summary.addView(text("TIMELINE WEEK", 12, Colors.MUTED, true));
+        summary.addView(serif(TimeUtil.weekLabel(weekStart), 28, Colors.TEXT));
+        summary.addView(text(TimeUtil.shortDuration(weekMetrics.trackedMs) + " tracked · "
+                + weekMetrics.productivePercent() + "% productive · "
+                + weekCards.size() + " cards", 14, Colors.TEXT, false));
+        summary.addView(progressBar(Colors.ACCENT, weekMetrics.trackedMs <= 0 ? 0f : weekMetrics.productiveMs / (float) weekMetrics.trackedMs), new LinearLayout.LayoutParams(-1, dp(14)));
+        content.addView(summary);
+        addGap(14);
+
+        TimelineWeekCanvasView grid = new TimelineWeekCanvasView(this);
+        grid.setCards(weekStart, weekCards);
+        grid.setListener(new TimelineWeekCanvasView.Listener() {
+            @Override public void onCardTapped(TimelineCard card) {
+                showWeekTimelineCardSheet(card);
+            }
+
+            @Override public void onDayTapped(int dayIndex) {
+                selectedDay = TimeUtil.dayKey(weekStart + dayIndex * TimeUtil.DAY + TimeUtil.HOUR);
+                timelineWeekMode = false;
+                refresh();
+            }
+        });
+        content.addView(grid, new LinearLayout.LayoutParams(-1, dp(760)));
+        addGap(12);
+
+        content.addView(timelineWeekDayStrip(weekStart, weekCards));
+        addGap(14);
+        if (weekCards.isEmpty()) {
+            LinearLayout empty = panel();
+            empty.addView(serif("No timeline cards this week", 24, Colors.TEXT));
+            empty.addView(text("Start recording and Dayflow will fill this weekly timeline from the same 15-minute batches.", 14, Colors.MUTED, false));
+            content.addView(empty);
+        } else {
+            renderCardList(weekCards);
+        }
+    }
+
+    private LinearLayout timelineWeekDayStrip(final long weekStart, List<TimelineCard> weekCards) {
+        LinearLayout strip = new LinearLayout(this);
+        strip.setOrientation(LinearLayout.VERTICAL);
+        strip.setPadding(dp(2), 0, dp(2), 0);
+        strip.addView(text("Tap a day to open the mobile day timeline.", 12, Colors.MUTED, false));
+        HorizontalScrollView scroller = new HorizontalScrollView(this);
+        scroller.setHorizontalScrollBarEnabled(false);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        scroller.addView(row);
+        String[] labels = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+        for (int i = 0; i < 7; i++) {
+            final int dayIndex = i;
+            String day = TimeUtil.dayKey(weekStart + i * TimeUtil.DAY + TimeUtil.HOUR);
+            long duration = durationForDay(weekCards, weekStart + i * TimeUtil.DAY);
+            Button button = smallButton(labels[i] + "\n" + day.substring(5) + "\n" + TimeUtil.shortDuration(duration));
+            button.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View view) {
+                    selectedDay = TimeUtil.dayKey(weekStart + dayIndex * TimeUtil.DAY + TimeUtil.HOUR);
+                    timelineWeekMode = false;
+                    refresh();
+                }
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(92), dp(72));
+            lp.setMargins(0, dp(8), dp(8), 0);
+            row.addView(button, lp);
+        }
+        strip.addView(scroller, new LinearLayout.LayoutParams(-1, dp(88)));
+        return strip;
+    }
+
+    private long durationForDay(List<TimelineCard> cards, long dayStart) {
+        long total = 0;
+        long dayEnd = dayStart + TimeUtil.DAY;
+        for (TimelineCard card : cards) {
+            total += Math.max(0, Math.min(card.endMs, dayEnd) - Math.max(card.startMs, dayStart));
+        }
+        return total;
+    }
+
+    private void showWeekTimelineCardSheet(final TimelineCard card) {
+        String message = TimeUtil.timeLabel(card.startMs) + " - " + TimeUtil.timeLabel(card.endMs)
+                + "\n" + clean(card.category, "Uncategorized")
+                + "\n\n" + clean(card.summary, "No summary yet.");
+        new AlertDialog.Builder(this)
+                .setTitle(card.title)
+                .setMessage(message)
+                .setPositiveButton("Open day", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        selectedDay = TimeUtil.dayKey(card.startMs);
+                        timelineWeekMode = false;
+                        refresh();
+                    }
+                })
+                .setNegativeButton("Copy", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        copyText("Dayflow card", card.title + "\n" + message);
+                    }
+                })
+                .setNeutralButton("Category", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        showCategoryPicker(card);
+                    }
+                })
+                .show();
+    }
+
+    private void navigateTimeline(int days) {
+        long anchor = TimeUtil.dayStartMs(selectedDay) + days * TimeUtil.DAY + TimeUtil.HOUR;
+        selectedDay = TimeUtil.dayKey(anchor);
+        selectedWeekStartMs = TimeUtil.weekStartMs(anchor);
+        refresh();
+    }
+
+    private boolean canNavigateTimelineForward() {
+        long todayStart = TimeUtil.dayStartMs(TimeUtil.dayKey(System.currentTimeMillis()));
+        if (timelineWeekMode) {
+            return selectedWeekStartMs + 7 * TimeUtil.DAY <= TimeUtil.weekStartMs(System.currentTimeMillis());
+        }
+        return TimeUtil.dayStartMs(selectedDay) < todayStart;
+    }
+
+    private String timelineHeaderLabel() {
+        if (timelineWeekMode) return TimeUtil.weekLabel(selectedWeekStartMs) + "  Calendar";
+        String today = TimeUtil.dayKey(System.currentTimeMillis());
+        return (today.equals(selectedDay) ? "Today" : selectedDay) + "  Calendar";
+    }
+
+    private void showTimelineDatePicker() {
+        final Calendar cal = Calendar.getInstance();
+        cal.setTimeInMillis(TimeUtil.dayStartMs(selectedDay) + TimeUtil.HOUR);
+        DatePickerDialog dialog = new DatePickerDialog(this, new DatePickerDialog.OnDateSetListener() {
+            @Override public void onDateSet(DatePicker picker, int year, int month, int dayOfMonth) {
+                Calendar picked = Calendar.getInstance();
+                picked.set(Calendar.YEAR, year);
+                picked.set(Calendar.MONTH, month);
+                picked.set(Calendar.DAY_OF_MONTH, dayOfMonth);
+                picked.set(Calendar.HOUR_OF_DAY, 12);
+                picked.set(Calendar.MINUTE, 0);
+                picked.set(Calendar.SECOND, 0);
+                picked.set(Calendar.MILLISECOND, 0);
+                selectedDay = TimeUtil.dayKey(picked.getTimeInMillis());
+                selectedWeekStartMs = TimeUtil.weekStartMs(picked.getTimeInMillis());
+                refresh();
+            }
+        }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH));
+        dialog.getDatePicker().setMaxDate(System.currentTimeMillis());
+        dialog.show();
     }
 
     private void renderDaily(List<TimelineCard> cards) {
@@ -2822,16 +3020,24 @@ public final class MainActivity extends Activity {
 
     private LinearLayout timelineQuickActions() {
         LinearLayout actions = row();
-        Button copy = smallButton("Copy timeline");
+        Button copy = smallButton(timelineWeekMode ? "Copy week" : "Copy timeline");
         copy.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                copyText("Dayflow timeline", db.timelineClipboardText(selectedDay));
+                copyText("Dayflow timeline", timelineWeekMode
+                        ? db.timelineClipboardTextForWeek(selectedWeekStartMs)
+                        : db.timelineClipboardText(selectedDay));
             }
         });
-        Button export = smallButton("Export day");
+        Button export = smallButton(timelineWeekMode ? "Export week" : "Export day");
         export.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                startMarkdownExport(selectedDay, selectedDay);
+                if (timelineWeekMode) {
+                    String from = TimeUtil.dayKey(selectedWeekStartMs + TimeUtil.HOUR);
+                    String to = TimeUtil.dayKey(selectedWeekStartMs + 6 * TimeUtil.DAY + TimeUtil.HOUR);
+                    startMarkdownExport(from, to);
+                } else {
+                    startMarkdownExport(selectedDay, selectedDay);
+                }
             }
         });
         actions.addView(copy, new LinearLayout.LayoutParams(0, dp(38), 1));
