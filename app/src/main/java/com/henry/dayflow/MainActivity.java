@@ -519,6 +519,12 @@ public final class MainActivity extends Activity {
         content.addView(dashboard, new LinearLayout.LayoutParams(-1, dp(530)));
         addGap(14);
 
+        ReviewSnapshot reviewSnapshot = db.reviewSnapshot(selectedDay, cards);
+        if (reviewSnapshot.unreviewedCards > 0) {
+            content.addView(cardsToReviewButton(reviewSnapshot.unreviewedCards), new LinearLayout.LayoutParams(-1, dp(48)));
+            addGap(10);
+        }
+
         TimelineCanvasView timeline = new TimelineCanvasView(this);
         timeline.setCards(selectedDay, cards);
         content.addView(timeline, new LinearLayout.LayoutParams(-1, dp(24 * 92)));
@@ -2629,14 +2635,33 @@ public final class MainActivity extends Activity {
 
     private void renderCardList(List<TimelineCard> cards) {
         for (final TimelineCard card : cards) {
-            LinearLayout p = panel();
-            p.addView(text(TimeUtil.timeLabel(card.startMs) + " - " + TimeUtil.timeLabel(card.endMs) + " · " + card.category, 12, Colors.MUTED, true));
-            p.addView(serif(card.title, 24, Colors.TEXT));
-            p.addView(text(card.summary == null ? "" : card.summary, 14, Colors.TEXT, false));
-            p.addView(cardActions(card));
-            content.addView(p);
+            content.addView(timelineActivityCard(card));
             addGap(10);
         }
+    }
+
+    private LinearLayout timelineActivityCard(final TimelineCard card) {
+        LinearLayout p = panel();
+        LinearLayout meta = row();
+        meta.addView(reviewChip(TimeUtil.timeLabel(card.startMs) + " - " + TimeUtil.timeLabel(card.endMs), Colors.STROKE, Colors.CARD_ALT), new LinearLayout.LayoutParams(0, dp(30), 1));
+        meta.addView(reviewChip(clean(card.category, "Uncategorized"), Colors.colorForCategory(card.category), ColorUtils.withAlpha(Colors.colorForCategory(card.category), 28)), new LinearLayout.LayoutParams(0, dp(30), 1));
+        p.addView(meta);
+
+        TextView title = serif(card.title, 24, Colors.TEXT);
+        p.addView(title);
+
+        addTimelinePreview(p, card);
+
+        p.addView(text("SUMMARY", 12, Colors.MUTED, true));
+        p.addView(text(card.summary == null ? "" : card.summary, 14, Colors.TEXT, false));
+        if (card.detailedSummary != null && !card.detailedSummary.trim().isEmpty() && !card.detailedSummary.trim().equals(card.summary == null ? "" : card.summary.trim())) {
+            p.addView(text("DETAILED SUMMARY", 12, Colors.MUTED, true));
+            p.addView(text(formatDetailedSummary(card.detailedSummary), 13, Colors.TEXT, false));
+        }
+
+        p.addView(timelineSummaryFeedback(card));
+        p.addView(cardActions(card));
+        return p;
     }
 
     private LinearLayout cardActions(final TimelineCard card) {
@@ -2711,6 +2736,103 @@ public final class MainActivity extends Activity {
             }
         });
         return button;
+    }
+
+    private Button cardsToReviewButton(int count) {
+        Button button = new Button(this);
+        button.setAllCaps(false);
+        button.setText(count + (count == 1 ? " card to review" : " cards to review"));
+        button.setTextColor(Color.WHITE);
+        button.setTypeface(DayflowType.sans(this, true));
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{0xffff9a70, 0xffbdaeec});
+        bg.setStroke(dp(1), 0xffffd9d2);
+        bg.setCornerRadius(dp(22));
+        button.setBackground(bg);
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                selectedTab = "Review";
+                refresh();
+            }
+        });
+        return button;
+    }
+
+    private void addTimelinePreview(LinearLayout panel, final TimelineCard card) {
+        List<ScreenshotRecord> frames = db.screenshotsInRange(card.startMs, card.endMs, 12);
+        if (frames.isEmpty()) return;
+        ScreenshotRecord frame = frames.get(frames.size() / 2);
+        Bitmap bitmap = previewBitmap(frame.filePath);
+        if (bitmap == null) return;
+        FrameLayout preview = new FrameLayout(this);
+        ImageView image = new ImageView(this);
+        image.setImageBitmap(bitmap);
+        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        image.setContentDescription("Timeline screenshot preview");
+        preview.addView(image, new FrameLayout.LayoutParams(-1, -1));
+
+        TextView play = text("Play timelapse", 12, Color.WHITE, true);
+        play.setGravity(Gravity.CENTER);
+        GradientDrawable pill = new GradientDrawable();
+        pill.setColor(0x99000000);
+        pill.setCornerRadius(dp(22));
+        play.setBackground(pill);
+        FrameLayout.LayoutParams playLp = new FrameLayout.LayoutParams(dp(128), dp(40), Gravity.CENTER);
+        preview.addView(play, playLp);
+        preview.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                openOrGenerateTimelapse(card, true);
+            }
+        });
+
+        GradientDrawable border = new GradientDrawable();
+        border.setColor(Colors.CARD_ALT);
+        border.setStroke(1, Colors.STROKE);
+        border.setCornerRadius(dp(12));
+        preview.setBackground(border);
+        preview.setClipToOutline(true);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(190));
+        lp.setMargins(0, dp(10), 0, dp(12));
+        panel.addView(preview, lp);
+    }
+
+    private LinearLayout timelineSummaryFeedback(final TimelineCard card) {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(dp(12), dp(4), dp(12), dp(4));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xfffafafa);
+        bg.setStroke(1, 0xffeeeeee);
+        bg.setCornerRadius(dp(1));
+        bar.setBackground(bg);
+
+        Button delete = smallButton("Delete");
+        delete.setTextColor(0xffc05c54);
+        delete.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                confirmDeleteCard(card);
+            }
+        });
+        bar.addView(delete, new LinearLayout.LayoutParams(dp(86), dp(32)));
+
+        TextView label = text("Rate this summary", 12, Colors.MUTED, false);
+        label.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        bar.addView(label, new LinearLayout.LayoutParams(0, dp(32), 1));
+
+        Button up = smallButton("Good");
+        up.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { setStatus("Summary feedback saved."); }
+        });
+        Button down = smallButton("Off");
+        down.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { setStatus("Summary feedback saved. You can reprocess this day from Settings."); }
+        });
+        bar.addView(up, new LinearLayout.LayoutParams(dp(72), dp(32)));
+        bar.addView(down, new LinearLayout.LayoutParams(dp(66), dp(32)));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(42));
+        lp.setMargins(0, dp(12), 0, dp(8));
+        bar.setLayoutParams(lp);
+        return bar;
     }
 
     private LinearLayout chatMessageView(final DayflowChatMessage message) {
@@ -3292,6 +3414,13 @@ public final class MainActivity extends Activity {
     private static String clean(String value, String fallback) {
         if (value == null || value.trim().isEmpty()) return fallback;
         return value.trim();
+    }
+
+    private static String formatDetailedSummary(String value) {
+        if (value == null) return "";
+        String clean = value.trim();
+        if (clean.contains("\n") || clean.contains("\r")) return clean;
+        return clean.replaceAll("(?<!^)(\\b\\d{1,2}:\\d{2}\\s?(?:AM|PM)\\s*-\\s*\\d{1,2}:\\d{2}\\s?(?:AM|PM)\\b)", "\n$1");
     }
 
     private static String joinLines(List<String> lines) {
