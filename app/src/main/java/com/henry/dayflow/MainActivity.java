@@ -34,6 +34,7 @@ import android.graphics.drawable.GradientDrawable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -1002,6 +1003,8 @@ public final class MainActivity extends Activity {
         });
         panel.addView(setup, new LinearLayout.LayoutParams(-1, dp(42)));
 
+        addJournalReminderSettings(panel);
+
         panel.addView(text("Pause recording", 13, Colors.MUTED, true));
         panel.addView(text(prefs.pauseLabel(), 14, Colors.TEXT, false));
         LinearLayout pauseShort = row();
@@ -1170,6 +1173,102 @@ public final class MainActivity extends Activity {
             panel.addView(blockedSwitch(app));
         }
         content.addView(panel);
+    }
+
+    private void addJournalReminderSettings(LinearLayout panel) {
+        panel.addView(text("Journal reminders", 13, Colors.MUTED, true));
+        panel.addView(text(JournalReminderScheduler.reminderSummary(this), 14, Colors.TEXT, false));
+
+        final Switch enabled = new Switch(this);
+        enabled.setText("Recurring intention and reflection notifications");
+        enabled.setTextColor(Colors.TEXT);
+        enabled.setTextSize(13);
+        enabled.setTypeface(DayflowType.sans(this));
+        enabled.setChecked(prefs.journalRemindersEnabled());
+        panel.addView(enabled);
+
+        final EditText intentionHour = field("Intention hour", String.valueOf(prefs.journalIntentionHour()), true);
+        final EditText intentionMinute = field("Intention minute", String.valueOf(prefs.journalIntentionMinute()), true);
+        final EditText reflectionHour = field("Reflection hour", String.valueOf(prefs.journalReflectionHour()), true);
+        final EditText reflectionMinute = field("Reflection minute", String.valueOf(prefs.journalReflectionMinute()), true);
+        intentionHour.setInputType(InputType.TYPE_CLASS_NUMBER);
+        intentionMinute.setInputType(InputType.TYPE_CLASS_NUMBER);
+        reflectionHour.setInputType(InputType.TYPE_CLASS_NUMBER);
+        reflectionMinute.setInputType(InputType.TYPE_CLASS_NUMBER);
+
+        LinearLayout firstRow = row();
+        firstRow.addView(intentionHour, new LinearLayout.LayoutParams(0, dp(54), 1));
+        firstRow.addView(intentionMinute, new LinearLayout.LayoutParams(0, dp(54), 1));
+        panel.addView(firstRow);
+
+        LinearLayout secondRow = row();
+        secondRow.addView(reflectionHour, new LinearLayout.LayoutParams(0, dp(54), 1));
+        secondRow.addView(reflectionMinute, new LinearLayout.LayoutParams(0, dp(54), 1));
+        panel.addView(secondRow);
+
+        final Switch[] weekdays = new Switch[7];
+        int[] calendarDays = new int[]{
+                Calendar.MONDAY,
+                Calendar.TUESDAY,
+                Calendar.WEDNESDAY,
+                Calendar.THURSDAY,
+                Calendar.FRIDAY,
+                Calendar.SATURDAY,
+                Calendar.SUNDAY};
+        String[] labels = new String[]{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+        for (int i = 0; i < weekdays.length; i++) {
+            weekdays[i] = reminderDaySwitch(labels[i], calendarDays[i]);
+            panel.addView(weekdays[i]);
+        }
+
+        LinearLayout actions = row();
+        Button save = pillButton("Save reminders");
+        save.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.setJournalRemindersEnabled(enabled.isChecked());
+                prefs.setJournalReminderTimes(
+                        parseInt(intentionHour.getText().toString(), prefs.journalIntentionHour()),
+                        parseInt(intentionMinute.getText().toString(), prefs.journalIntentionMinute()),
+                        parseInt(reflectionHour.getText().toString(), prefs.journalReflectionHour()),
+                        parseInt(reflectionMinute.getText().toString(), prefs.journalReflectionMinute()));
+                for (Switch weekday : weekdays) {
+                    Integer day = (Integer) weekday.getTag();
+                    prefs.setJournalWeekdayEnabled(day, weekday.isChecked());
+                }
+                if (enabled.isChecked()) {
+                    maybeRequestNotifications();
+                    JournalReminderScheduler.reschedule(MainActivity.this);
+                    setStatus("Journal reminders scheduled.");
+                } else {
+                    JournalReminderScheduler.cancel(MainActivity.this);
+                    setStatus("Journal reminders disabled.");
+                }
+                refresh();
+            }
+        });
+        Button test = smallButton("Test");
+        test.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                sendBroadcast(new Intent(MainActivity.this, JournalReminderReceiver.class)
+                        .setAction(JournalReminderScheduler.ACTION_REMINDER)
+                        .putExtra(JournalReminderScheduler.EXTRA_KIND, JournalReminderScheduler.KIND_REFLECTIONS));
+                setStatus("Test reminder sent.");
+            }
+        });
+        actions.addView(save, new LinearLayout.LayoutParams(0, dp(44), 1));
+        actions.addView(test, new LinearLayout.LayoutParams(dp(90), dp(44)));
+        panel.addView(actions);
+    }
+
+    private Switch reminderDaySwitch(String label, int calendarDay) {
+        Switch day = new Switch(this);
+        day.setText(label);
+        day.setTextColor(Colors.TEXT);
+        day.setTextSize(13);
+        day.setTypeface(DayflowType.sans(this));
+        day.setTag(calendarDay);
+        day.setChecked(prefs.journalReminderIncludesWeekday(calendarDay));
+        return day;
     }
 
     private Button providerChoiceButton(String label, final String providerName, final int nextStep) {

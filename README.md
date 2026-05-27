@@ -15,6 +15,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Timeline and review cards support manual category reassignment and single-card deletion, matching the original Dayflow correction workflow.
 - Daily view surfaces day-goal progress, focus summaries, distraction summaries, workflow heatmaps, and standup copy actions.
 - Daily standups are stored by day and can be saved or regenerated through the selected Gemini/Ollama provider with local fallback.
+- Journal reminders can schedule recurring intention and reflection notifications on selected weekdays, with boot-time rescheduling.
 - Redacts screenshots for blocked apps while still preserving timeline continuity.
 - Supports timed/indefinite recording pauses and shows saved screenshots inside review cards for frame-by-frame context.
 - Weekly view supports Monday-based week navigation, focus heatmaps, time distribution, top-level updates, next-step suggestions, and application interaction summaries.

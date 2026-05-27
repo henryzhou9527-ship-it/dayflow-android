@@ -60,6 +60,34 @@ final class DayflowPrefs {
         return Math.max(1, prefs.getInt("retention_days", 7));
     }
 
+    boolean journalRemindersEnabled() {
+        return prefs.getBoolean("journal_reminders_enabled", false);
+    }
+
+    int journalIntentionHour() {
+        return clampHour(prefs.getInt("journal_intention_hour", 9));
+    }
+
+    int journalIntentionMinute() {
+        return clampMinute(prefs.getInt("journal_intention_minute", 0));
+    }
+
+    int journalReflectionHour() {
+        return clampHour(prefs.getInt("journal_reflection_hour", 17));
+    }
+
+    int journalReflectionMinute() {
+        return clampMinute(prefs.getInt("journal_reflection_minute", 0));
+    }
+
+    int journalWeekdayMask() {
+        return prefs.getInt("journal_weekday_mask", (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5) | (1 << 6));
+    }
+
+    boolean journalReminderIncludesWeekday(int calendarWeekday) {
+        return (journalWeekdayMask() & (1 << Math.max(1, Math.min(7, calendarWeekday)))) != 0;
+    }
+
     boolean didOnboard() {
         return prefs.getBoolean("did_onboard", false);
     }
@@ -135,6 +163,27 @@ final class DayflowPrefs {
         prefs.edit().putInt("retention_days", Math.max(1, Math.min(365, days))).apply();
     }
 
+    void setJournalRemindersEnabled(boolean enabled) {
+        prefs.edit().putBoolean("journal_reminders_enabled", enabled).apply();
+    }
+
+    void setJournalReminderTimes(int intentionHour, int intentionMinute, int reflectionHour, int reflectionMinute) {
+        prefs.edit()
+                .putInt("journal_intention_hour", clampHour(intentionHour))
+                .putInt("journal_intention_minute", clampMinute(intentionMinute))
+                .putInt("journal_reflection_hour", clampHour(reflectionHour))
+                .putInt("journal_reflection_minute", clampMinute(reflectionMinute))
+                .apply();
+    }
+
+    void setJournalWeekdayEnabled(int calendarWeekday, boolean enabled) {
+        int day = Math.max(1, Math.min(7, calendarWeekday));
+        int mask = journalWeekdayMask();
+        if (enabled) mask |= 1 << day;
+        else mask &= ~(1 << day);
+        prefs.edit().putInt("journal_weekday_mask", mask).apply();
+    }
+
     void setDidOnboard(boolean value) {
         prefs.edit()
                 .putBoolean("did_onboard", value)
@@ -185,5 +234,13 @@ final class DayflowPrefs {
 
     void setGeminiModel(String model) {
         prefs.edit().putString("gemini_model", model == null || model.trim().isEmpty() ? "gemini-2.5-flash" : model.trim()).apply();
+    }
+
+    private static int clampHour(int value) {
+        return Math.max(0, Math.min(23, value));
+    }
+
+    private static int clampMinute(int value) {
+        return Math.max(0, Math.min(59, value));
     }
 }
