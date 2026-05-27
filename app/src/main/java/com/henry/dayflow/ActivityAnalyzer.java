@@ -25,13 +25,16 @@ interface ActivityAnalyzer {
 }
 
 final class HybridActivityAnalyzer implements ActivityAnalyzer {
+    private final DayflowDatabase db;
     private final DayflowPrefs prefs;
     private final ActivityAnalyzer heuristic;
     private final ActivityAnalyzer gemini;
     private final ActivityAnalyzer ollama;
 
     HybridActivityAnalyzer(Context context) {
-        prefs = new DayflowPrefs(context);
+        Context appContext = context.getApplicationContext();
+        db = new DayflowDatabase(appContext);
+        prefs = new DayflowPrefs(appContext);
         heuristic = new HeuristicActivityAnalyzer();
         gemini = new GeminiActivityAnalyzer(prefs);
         ollama = new OllamaActivityAnalyzer(prefs);
@@ -40,28 +43,53 @@ final class HybridActivityAnalyzer implements ActivityAnalyzer {
     @Override
     public List<TimelineCard> analyze(long batchId, List<ScreenshotRecord> screenshots, List<TimelineCard> existingCards) throws Exception {
         Exception firstError = null;
+        String primary = prefs.provider();
         try {
-            return analyzeWithProvider(prefs.provider(), batchId, screenshots, existingCards);
+            return analyzeLogged(primary, "timeline_analysis_primary", batchId, screenshots, existingCards);
         } catch (Exception error) {
             firstError = error;
         }
 
         String backup = prefs.backupProvider();
-        if (!sameProvider(prefs.provider(), backup)) {
+        if (!sameProvider(primary, backup)) {
             try {
-                return analyzeWithProvider(backup, batchId, screenshots, existingCards);
-            } catch (Exception ignored) {
+                return analyzeLogged(backup, "timeline_analysis_backup", batchId, screenshots, existingCards);
+            } catch (Exception backupError) {
+                if (firstError == null) firstError = backupError;
             }
         }
 
+        long startedAt = System.currentTimeMillis();
+        List<TimelineCard> cards = heuristic.analyze(batchId, screenshots, existingCards);
         if (firstError != null) {
-            List<TimelineCard> cards = heuristic.analyze(batchId, screenshots, existingCards);
             for (TimelineCard card : cards) {
                 card.metadata = (card.metadata == null ? "" : card.metadata) + "primary_error=" + firstError.getClass().getSimpleName() + ";";
             }
-            return cards;
         }
-        return heuristic.analyze(batchId, screenshots, existingCards);
+        saveCallLog(
+                "Heuristic",
+                "",
+                firstError == null ? "timeline_analysis_fallback" : "timeline_analysis_fallback_after_error",
+                "success",
+                batchId,
+                screenshots,
+                cards,
+                System.currentTimeMillis() - startedAt,
+                firstError);
+        return cards;
+    }
+
+    private List<TimelineCard> analyzeLogged(String providerName, String operation, long batchId, List<ScreenshotRecord> screenshots, List<TimelineCard> existingCards) throws Exception {
+        long startedAt = System.currentTimeMillis();
+        String provider = resolvedProvider(providerName);
+        try {
+            List<TimelineCard> cards = analyzeWithProvider(providerName, batchId, screenshots, existingCards);
+            saveCallLog(provider, providerModel(provider), operation, "success", batchId, screenshots, cards, System.currentTimeMillis() - startedAt, null);
+            return cards;
+        } catch (Exception error) {
+            saveCallLog(provider, providerModel(provider), operation, "failure", batchId, screenshots, null, System.currentTimeMillis() - startedAt, error);
+            throw error;
+        }
     }
 
     private List<TimelineCard> analyzeWithProvider(String providerName, long batchId, List<ScreenshotRecord> screenshots, List<TimelineCard> existingCards) throws Exception {
@@ -72,6 +100,64 @@ final class HybridActivityAnalyzer implements ActivityAnalyzer {
             return gemini.analyze(batchId, screenshots, existingCards);
         }
         return heuristic.analyze(batchId, screenshots, existingCards);
+    }
+
+    private void saveCallLog(String provider, String model, String operation, String status, long batchId, List<ScreenshotRecord> screenshots, List<TimelineCard> cards, long latencyMs, Exception error) {
+        LlmCallLog log = new LlmCallLog();
+        log.createdAtMs = System.currentTimeMillis();
+        log.batchId = batchId;
+        log.provider = provider;
+        log.model = model;
+        log.operation = operation;
+        log.status = status;
+        log.latencyMs = latencyMs;
+        log.screenshotCount = screenshots == null ? 0 : screenshots.size();
+        log.cardCount = cards == null ? 0 : cards.size();
+        log.errorMessage = error == null ? null : error.getClass().getSimpleName() + ": " + error.getMessage();
+        log.requestSummary = screenshots == null || screenshots.isEmpty() ? "" : AnalyzerPromptContext.metadataFor(screenshots);
+        log.responseSummary = cardsSummary(cards);
+        db.saveLlmCall(log);
+    }
+
+    private String resolvedProvider(String providerName) {
+        String provider = providerName == null ? "" : providerName.trim();
+        String lower = provider.toLowerCase(Locale.US);
+        if (lower.contains("ollama")) return "Ollama";
+        if (lower.contains("gemini") || (lower.isEmpty() && prefs.useCloudAnalyzer())) return "Gemini";
+        if (lower.contains("heuristic") || lower.isEmpty()) return "Heuristic";
+        return provider;
+    }
+
+    private String providerModel(String providerName) {
+        String provider = providerName == null ? "" : providerName.toLowerCase(Locale.US);
+        if (provider.contains("gemini")) return prefs.geminiModel();
+        if (provider.contains("ollama")) return prefs.ollamaModel();
+        return "";
+    }
+
+    private static String cardsSummary(List<TimelineCard> cards) {
+        if (cards == null || cards.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        sb.append(cards.size()).append(" cards");
+        int count = Math.min(4, cards.size());
+        for (int i = 0; i < count; i++) {
+            TimelineCard card = cards.get(i);
+            sb.append("\n- ")
+                    .append(TimeUtil.timeLabel(card.startMs))
+                    .append(" ")
+                    .append(shortText(card.title, 90))
+                    .append(" / ")
+                    .append(shortText(card.category, 40));
+        }
+        return sb.toString();
+    }
+
+    private static String shortText(String value, int max) {
+        if (value == null) return "";
+        String clean = value.replace('\n', ' ').replace('\r', ' ').trim();
+        while (clean.contains("  ")) clean = clean.replace("  ", " ");
+        if (clean.length() <= max) return clean;
+        return clean.substring(0, Math.max(1, max - 3)).trim() + "...";
     }
 
     private static boolean sameProvider(String a, String b) {

@@ -45,6 +45,7 @@ final class AnalysisEngine {
         List<ScreenshotRecord> screenshots = db.screenshotsForBatch(batchId);
         if (screenshots.isEmpty()) {
             db.updateBatch(batchId, "failed_empty", "No screenshots");
+            logEngineEvent(batchId, "batch_gate", "failed_empty", screenshots, 0, "No screenshots");
             return;
         }
 
@@ -52,6 +53,7 @@ final class AnalysisEngine {
         long endMs = screenshots.get(screenshots.size() - 1).capturedAtMs;
         if (endMs - startMs < 5 * TimeUtil.MINUTE) {
             db.updateBatch(batchId, "skipped_short", "Less than 5 minutes");
+            logEngineEvent(batchId, "batch_gate", "skipped_short", screenshots, 0, "Less than 5 minutes");
             return;
         }
 
@@ -64,6 +66,7 @@ final class AnalysisEngine {
             db.replaceTimelineCardsInRange(windowStart, endMs, cards, batchId);
             pregenerateTimelapsesIfNeeded(windowStart, endMs);
             db.updateBatch(batchId, "analyzed", null);
+            logEngineEvent(batchId, "timeline_commit", "success", screenshots, cards.size(), "Saved timeline cards");
         } catch (Exception error) {
             TimelineCard card = new TimelineCard();
             card.batchId = batchId;
@@ -81,7 +84,26 @@ final class AnalysisEngine {
             db.replaceTimelineCardsInRange(startMs, endMs, cards, batchId);
             pregenerateTimelapsesIfNeeded(startMs, endMs);
             db.updateBatch(batchId, "failed", error.getMessage());
+            logEngineEvent(batchId, "timeline_commit", "failure", screenshots, cards.size(), error.getClass().getSimpleName() + ": " + error.getMessage());
         }
+    }
+
+    private void logEngineEvent(long batchId, String operation, String status, List<ScreenshotRecord> screenshots, int cardCount, String message) {
+        LlmCallLog log = new LlmCallLog();
+        log.createdAtMs = System.currentTimeMillis();
+        log.batchId = batchId;
+        log.provider = "Engine";
+        log.operation = operation;
+        log.status = status;
+        log.screenshotCount = screenshots == null ? 0 : screenshots.size();
+        log.cardCount = Math.max(0, cardCount);
+        if (status != null && (status.contains("failed") || status.contains("failure") || status.contains("skipped"))) {
+            log.errorMessage = message;
+        } else {
+            log.responseSummary = message;
+        }
+        log.requestSummary = screenshots == null || screenshots.isEmpty() ? "" : AnalyzerPromptContext.metadataFor(screenshots);
+        db.saveLlmCall(log);
     }
 
     private void pregenerateTimelapsesIfNeeded(long startMs, long endMs) {

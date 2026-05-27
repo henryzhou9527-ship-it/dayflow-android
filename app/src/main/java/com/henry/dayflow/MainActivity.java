@@ -2679,6 +2679,7 @@ public final class MainActivity extends Activity {
         });
         panel.addView(save, new LinearLayout.LayoutParams(-1, dp(44)));
 
+        addDiagnosticsSettings(panel);
         addJournalReminderSettings(panel);
         panel.addView(text("Pause recording", 13, Colors.MUTED, true));
         panel.addView(text(prefs.pauseLabel(), 14, Colors.TEXT, false));
@@ -2708,6 +2709,39 @@ public final class MainActivity extends Activity {
             }
         });
         panel.addView(resume, new LinearLayout.LayoutParams(-1, dp(44)));
+    }
+
+    private void addDiagnosticsSettings(LinearLayout panel) {
+        panel.addView(text("Diagnostics", 13, Colors.MUTED, true));
+        panel.addView(text(db.diagnosticsSummary(), 14, Colors.TEXT, false));
+
+        LinearLayout actions = row();
+        Button copy = pillButton("Copy diagnostics");
+        copy.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                copyText("Dayflow diagnostics", db.diagnosticReport(20));
+            }
+        });
+        Button clear = smallButton("Clear");
+        clear.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                new AlertDialog.Builder(MainActivity.this)
+                        .setTitle("Clear diagnostics?")
+                        .setMessage("Provider attempts, analysis errors, and batch decisions will be removed. Timeline data stays intact.")
+                        .setPositiveButton("Clear", new DialogInterface.OnClickListener() {
+                            @Override public void onClick(DialogInterface dialog, int which) {
+                                int count = db.clearLlmCalls();
+                                setStatus("Cleared " + count + " diagnostic events.");
+                                refresh();
+                            }
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .show();
+            }
+        });
+        actions.addView(copy, new LinearLayout.LayoutParams(0, dp(44), 1));
+        actions.addView(clear, new LinearLayout.LayoutParams(dp(92), dp(44)));
+        panel.addView(actions);
     }
 
     private void addDataExportSettings(LinearLayout panel) {

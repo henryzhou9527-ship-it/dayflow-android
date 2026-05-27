@@ -20,7 +20,7 @@ import java.util.Map;
 
 final class DayflowDatabase extends SQLiteOpenHelper {
     private static final String DB_NAME = "dayflow.sqlite";
-    private static final int DB_VERSION = 8;
+    private static final int DB_VERSION = 9;
 
     private final Context appContext;
 
@@ -60,6 +60,9 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         if (oldVersion < 8) {
             addColumnIfMissing(db, "screenshots", "window_title", "TEXT");
             addColumnIfMissing(db, "screenshots", "visible_text", "TEXT");
+        }
+        if (oldVersion < 9) {
+            createFeatureTables(db);
         }
     }
 
@@ -198,6 +201,23 @@ final class DayflowDatabase extends SQLiteOpenHelper {
                 "created_at INTEGER NOT NULL," +
                 "updated_at INTEGER NOT NULL)");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_daily_standups_updated ON daily_standup_entries(updated_at)");
+
+        db.execSQL("CREATE TABLE IF NOT EXISTS llm_calls (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "created_at INTEGER NOT NULL," +
+                "batch_id INTEGER," +
+                "provider TEXT NOT NULL," +
+                "model TEXT," +
+                "operation TEXT NOT NULL," +
+                "status TEXT NOT NULL," +
+                "latency_ms INTEGER," +
+                "screenshot_count INTEGER," +
+                "card_count INTEGER," +
+                "error_message TEXT," +
+                "request_summary TEXT," +
+                "response_summary TEXT)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_llm_calls_created ON llm_calls(created_at)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_llm_calls_batch ON llm_calls(batch_id)");
     }
 
     private void seedDefaultCategories(SQLiteDatabase db) {
@@ -647,6 +667,81 @@ final class DayflowDatabase extends SQLiteOpenHelper {
 
     synchronized void clearChatMessages() {
         getWritableDatabase().delete("chat_messages", null, null);
+    }
+
+    synchronized void saveLlmCall(LlmCallLog log) {
+        if (log == null) return;
+        ContentValues values = new ContentValues();
+        values.put("created_at", log.createdAtMs > 0 ? log.createdAtMs : System.currentTimeMillis());
+        if (log.batchId == null || log.batchId <= 0) values.putNull("batch_id");
+        else values.put("batch_id", log.batchId);
+        values.put("provider", emptyDefault(log.provider, "Unknown"));
+        values.put("model", trimToNull(log.model));
+        values.put("operation", emptyDefault(log.operation, "analysis"));
+        values.put("status", emptyDefault(log.status, "unknown"));
+        if (log.latencyMs == null) values.putNull("latency_ms");
+        else values.put("latency_ms", log.latencyMs);
+        values.put("screenshot_count", Math.max(0, log.screenshotCount));
+        values.put("card_count", Math.max(0, log.cardCount));
+        values.put("error_message", trimToNull(limitText(log.errorMessage, 1200)));
+        values.put("request_summary", trimToNull(limitText(log.requestSummary, 2400)));
+        values.put("response_summary", trimToNull(limitText(log.responseSummary, 2000)));
+        getWritableDatabase().insert("llm_calls", null, values);
+    }
+
+    synchronized List<LlmCallLog> fetchLlmCalls(int limit) {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT * FROM llm_calls ORDER BY created_at DESC LIMIT ?",
+                new String[]{String.valueOf(Math.max(1, limit))});
+        try {
+            List<LlmCallLog> logs = new ArrayList<>();
+            while (c.moveToNext()) logs.add(readLlmCall(c));
+            return logs;
+        } finally {
+            c.close();
+        }
+    }
+
+    synchronized int clearLlmCalls() {
+        return getWritableDatabase().delete("llm_calls", null, null);
+    }
+
+    synchronized String diagnosticsSummary() {
+        List<LlmCallLog> logs = fetchLlmCalls(3);
+        if (logs.isEmpty()) return "No diagnostic events yet. Run analysis once to capture provider attempts and batch decisions.";
+        StringBuilder sb = new StringBuilder();
+        for (LlmCallLog log : logs) {
+            if (sb.length() > 0) sb.append("\n");
+            sb.append(TimeUtil.timeLabel(log.createdAtMs))
+                    .append(" · ")
+                    .append(clean(log.provider))
+                    .append(" · ")
+                    .append(clean(log.status));
+            if (log.latencyMs != null && log.latencyMs > 0) sb.append(" · ").append(log.latencyMs).append("ms");
+            if (log.errorMessage != null && !log.errorMessage.trim().isEmpty()) {
+                sb.append("\n").append(limitText(log.errorMessage, 96));
+            }
+        }
+        return sb.toString();
+    }
+
+    synchronized String diagnosticReport(int limit) {
+        int safeLimit = Math.max(1, limit);
+        StringBuilder sb = new StringBuilder();
+        StorageStats stats = storageStats();
+        sb.append("Dayflow diagnostics\n");
+        sb.append("Generated: ").append(TimeUtil.dayKey(System.currentTimeMillis())).append(" ")
+                .append(TimeUtil.timeLabel(System.currentTimeMillis())).append("\n\n");
+
+        sb.append("Storage\n");
+        sb.append("- Screenshots: ").append(stats.screenshotCount).append("\n");
+        sb.append("- Timeline cards: ").append(stats.cardCount).append("\n");
+        sb.append("- Batches: ").append(stats.batchCount).append("\n\n");
+
+        appendLlmCalls(sb, safeLimit);
+        appendAnalysisBatches(sb, safeLimit);
+        appendRecentCards(sb, Math.min(12, safeLimit));
+        return sb.toString().trim();
     }
 
     synchronized DailyStandupEntry fetchDailyStandup(String day) {
@@ -1176,6 +1271,26 @@ final class DayflowDatabase extends SQLiteOpenHelper {
                 optionalString(c, "visible_text"));
     }
 
+    private LlmCallLog readLlmCall(Cursor c) {
+        LlmCallLog log = new LlmCallLog();
+        log.id = c.getLong(c.getColumnIndexOrThrow("id"));
+        log.createdAtMs = c.getLong(c.getColumnIndexOrThrow("created_at"));
+        int batchColumn = c.getColumnIndexOrThrow("batch_id");
+        log.batchId = c.isNull(batchColumn) ? null : c.getLong(batchColumn);
+        log.provider = c.getString(c.getColumnIndexOrThrow("provider"));
+        log.model = c.getString(c.getColumnIndexOrThrow("model"));
+        log.operation = c.getString(c.getColumnIndexOrThrow("operation"));
+        log.status = c.getString(c.getColumnIndexOrThrow("status"));
+        int latencyColumn = c.getColumnIndexOrThrow("latency_ms");
+        log.latencyMs = c.isNull(latencyColumn) ? null : c.getLong(latencyColumn);
+        log.screenshotCount = c.getInt(c.getColumnIndexOrThrow("screenshot_count"));
+        log.cardCount = c.getInt(c.getColumnIndexOrThrow("card_count"));
+        log.errorMessage = c.getString(c.getColumnIndexOrThrow("error_message"));
+        log.requestSummary = c.getString(c.getColumnIndexOrThrow("request_summary"));
+        log.responseSummary = c.getString(c.getColumnIndexOrThrow("response_summary"));
+        return log;
+    }
+
     private static String optionalString(Cursor c, String column) {
         int index = c.getColumnIndex(column);
         return index < 0 ? null : c.getString(index);
@@ -1301,6 +1416,114 @@ final class DayflowDatabase extends SQLiteOpenHelper {
     private static String clean(String value) {
         if (value == null) return "";
         return value.trim().replace("\r", "").replace("\n", "\n      ");
+    }
+
+    private void appendLlmCalls(StringBuilder sb, int limit) {
+        sb.append("Analysis calls\n");
+        List<LlmCallLog> logs = fetchLlmCalls(limit);
+        if (logs.isEmpty()) {
+            sb.append("- No analysis call logs yet.\n\n");
+            return;
+        }
+        for (LlmCallLog log : logs) {
+            sb.append("- ")
+                    .append(TimeUtil.dayKey(log.createdAtMs)).append(" ")
+                    .append(TimeUtil.timeLabel(log.createdAtMs))
+                    .append(" · ").append(clean(log.provider));
+            if (log.model != null && !log.model.trim().isEmpty()) sb.append("/").append(clean(log.model));
+            sb.append(" · ").append(clean(log.operation))
+                    .append(" · ").append(clean(log.status));
+            if (log.batchId != null) sb.append(" · batch ").append(log.batchId);
+            if (log.latencyMs != null) sb.append(" · ").append(log.latencyMs).append("ms");
+            sb.append(" · shots ").append(log.screenshotCount)
+                    .append(" · cards ").append(log.cardCount)
+                    .append("\n");
+            appendDiagnosticField(sb, "error", log.errorMessage, 320);
+            appendDiagnosticField(sb, "request", log.requestSummary, 520);
+            appendDiagnosticField(sb, "response", log.responseSummary, 420);
+        }
+        sb.append("\n");
+    }
+
+    private void appendAnalysisBatches(StringBuilder sb, int limit) {
+        sb.append("Recent batches\n");
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT id, batch_start_ts, batch_end_ts, status, reason, created_at FROM analysis_batches ORDER BY created_at DESC LIMIT ?",
+                new String[]{String.valueOf(Math.max(1, limit))});
+        try {
+            if (!c.moveToFirst()) {
+                sb.append("- No batches yet.\n\n");
+                return;
+            }
+            do {
+                sb.append("- #").append(c.getLong(0))
+                        .append(" · ")
+                        .append(TimeUtil.timeLabel(c.getLong(1)))
+                        .append(" - ")
+                        .append(TimeUtil.timeLabel(c.getLong(2)))
+                        .append(" · ")
+                        .append(c.getString(3));
+                String reason = c.getString(4);
+                if (reason != null && !reason.trim().isEmpty()) sb.append(" · ").append(limitText(reason, 160));
+                sb.append("\n");
+            } while (c.moveToNext());
+        } finally {
+            c.close();
+        }
+        sb.append("\n");
+    }
+
+    private void appendRecentCards(StringBuilder sb, int limit) {
+        sb.append("Recent cards\n");
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT start_ts, end_ts, title, category, batch_id FROM timeline_cards WHERE is_deleted = 0 ORDER BY start_ts DESC LIMIT ?",
+                new String[]{String.valueOf(Math.max(1, limit))});
+        try {
+            if (!c.moveToFirst()) {
+                sb.append("- No cards yet.\n");
+                return;
+            }
+            do {
+                sb.append("- ")
+                        .append(TimeUtil.dayKey(c.getLong(0)))
+                        .append(" ")
+                        .append(TimeUtil.timeLabel(c.getLong(0)))
+                        .append(" - ")
+                        .append(TimeUtil.timeLabel(c.getLong(1)))
+                        .append(" · ")
+                        .append(clean(c.getString(2)))
+                        .append(" · ")
+                        .append(clean(c.getString(3)));
+                if (!c.isNull(4)) sb.append(" · batch ").append(c.getLong(4));
+                sb.append("\n");
+            } while (c.moveToNext());
+        } finally {
+            c.close();
+        }
+    }
+
+    private static void appendDiagnosticField(StringBuilder sb, String label, String value, int max) {
+        if (value == null || value.trim().isEmpty()) return;
+        sb.append("  ").append(label).append(": ").append(limitText(value, max).replace("\n", "\n    ")).append("\n");
+    }
+
+    private static String emptyDefault(String value, String fallback) {
+        String clean = value == null ? "" : value.trim();
+        return clean.isEmpty() ? fallback : clean;
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) return null;
+        String clean = value.trim();
+        return clean.isEmpty() ? null : clean;
+    }
+
+    private static String limitText(String value, int max) {
+        if (value == null) return "";
+        String clean = value.replace('\r', '\n').trim();
+        while (clean.contains("\n\n\n")) clean = clean.replace("\n\n\n", "\n\n");
+        if (clean.length() <= max) return clean;
+        return clean.substring(0, Math.max(1, max - 3)).trim() + "...";
     }
 
     private static String normalizeFeedbackDirection(String direction) {
