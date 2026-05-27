@@ -357,6 +357,15 @@ public final class MainActivity extends Activity {
         quick.addView(heuristic, new LinearLayout.LayoutParams(0, dp(40), 1));
         panel.addView(quick);
 
+        Button test = smallButton("Test selected provider");
+        test.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                saveProviderFields(provider, backupProvider, apiKey, model, ollama, ollamaModel);
+                testSelectedProvider(provider.getText().toString(), apiKey.getText().toString(), model.getText().toString(), ollama.getText().toString(), ollamaModel.getText().toString());
+            }
+        });
+        panel.addView(test, new LinearLayout.LayoutParams(-1, dp(42)));
+
         LinearLayout actions = row();
         Button back = smallButton("Back");
         back.setOnClickListener(new View.OnClickListener() {
@@ -1470,20 +1479,66 @@ public final class MainActivity extends Activity {
         quick.addView(local, new LinearLayout.LayoutParams(0, dp(40), 1));
         panel.addView(quick);
 
+        panel.addView(text("Connection health", 13, Colors.MUTED, true));
+        Button test = smallButton("Test selected provider");
+        test.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                saveProviderFields(provider, backupProvider, apiKey, model, ollama, ollamaModel);
+                testSelectedProvider(provider.getText().toString(), apiKey.getText().toString(), model.getText().toString(), ollama.getText().toString(), ollamaModel.getText().toString());
+            }
+        });
+        panel.addView(test, new LinearLayout.LayoutParams(-1, dp(42)));
+
         Button save = pillButton("Save provider settings");
         save.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                prefs.setProvider(provider.getText().toString());
-                prefs.setBackupProvider(backupProvider.getText().toString());
-                prefs.setGeminiApiKey(apiKey.getText().toString());
-                prefs.setGeminiModel(model.getText().toString());
-                prefs.setOllamaEndpoint(ollama.getText().toString());
-                prefs.setOllamaModel(ollamaModel.getText().toString());
+                saveProviderFields(provider, backupProvider, apiKey, model, ollama, ollamaModel);
                 setStatus("Provider settings saved.");
                 refresh();
             }
         });
         panel.addView(save, new LinearLayout.LayoutParams(-1, dp(44)));
+    }
+
+    private void saveProviderFields(EditText provider, EditText backupProvider, EditText apiKey, EditText model, EditText ollama, EditText ollamaModel) {
+        prefs.setProvider(provider.getText().toString());
+        prefs.setBackupProvider(backupProvider.getText().toString());
+        prefs.setGeminiApiKey(apiKey.getText().toString());
+        prefs.setGeminiModel(model.getText().toString());
+        prefs.setOllamaEndpoint(ollama.getText().toString());
+        prefs.setOllamaModel(ollamaModel.getText().toString());
+    }
+
+    private void testSelectedProvider(final String provider, final String apiKey, final String model, final String ollamaEndpoint, final String ollamaModel) {
+        final String normalized = provider == null ? "" : provider.toLowerCase(Locale.US);
+        if (normalized.contains("heuristic") || normalized.trim().isEmpty()) {
+            setStatus("Heuristic provider is local and ready.");
+            return;
+        }
+        setStatus("Testing provider connection...");
+        new Thread(new Runnable() {
+            @Override public void run() {
+                try {
+                    final String result;
+                    if (normalized.contains("ollama")) {
+                        result = ProviderConnectionTester.testOllama(ollamaEndpoint, ollamaModel);
+                    } else if (normalized.contains("gemini")) {
+                        result = ProviderConnectionTester.testGemini(apiKey, model);
+                    } else {
+                        throw new IllegalStateException("Unsupported provider: " + provider);
+                    }
+                    runOnUiThread(new Runnable() {
+                        @Override public void run() { setStatus(result); }
+                    });
+                } catch (final Exception error) {
+                    runOnUiThread(new Runnable() {
+                        @Override public void run() {
+                            setStatus("Provider test failed: " + shortText(error.getMessage(), 90));
+                        }
+                    });
+                }
+            }
+        }, "dayflow-provider-test").start();
     }
 
     private void renderSettingsData(LinearLayout panel) {
