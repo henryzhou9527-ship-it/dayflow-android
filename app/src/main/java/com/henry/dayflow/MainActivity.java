@@ -1336,56 +1336,81 @@ public final class MainActivity extends Activity {
 
     private void renderJournal(final List<TimelineCard> cards, final DashboardMetrics metrics) {
         final JournalEntry entry = db.fetchJournal(selectedDay);
-        final DayGoal goal = db.fetchDayGoal(selectedDay);
 
         LinearLayout panel = panel();
-        panel.addView(serif("Journal · " + selectedDay, 30, Colors.TEXT));
-        panel.addView(text("Plan the day, keep notes, then close the loop with reflection.", 14, Colors.MUTED, false));
-
-        final EditText focusTarget = field("Focus target minutes", String.valueOf(goal.focusTargetMinutes), true);
-        final EditText distractionLimit = field("Distraction limit minutes", String.valueOf(goal.distractionLimitMinutes), true);
-        panel.addView(focusTarget, new LinearLayout.LayoutParams(-1, dp(54)));
-        panel.addView(distractionLimit, new LinearLayout.LayoutParams(-1, dp(54)));
-
-        final Switch skipped = new Switch(this);
-        skipped.setText("Skip goals for this day");
-        skipped.setTextColor(Colors.TEXT);
-        skipped.setTypeface(DayflowType.sans(this));
-        skipped.setChecked(goal.skipped);
-        panel.addView(skipped);
+        panel.addView(serif(journalHeadline(), 34, Colors.TEXT));
+        panel.addView(text("Dayflow helps you track your daily and longer term pursuits, gives you the space to reflect, and generates a summary of each day.", 14, Colors.MUTED, false));
 
         final EditText intentions = field("Intentions", entry.intentions, false);
         final EditText goals = field("Goals", entry.goals, false);
         final EditText notes = field("Notes", entry.notes, false);
         final EditText reflections = field("Reflections", entry.reflections, false);
         final EditText summary = field("Summary", entry.summary, false);
-        panel.addView(intentions, new LinearLayout.LayoutParams(-1, dp(96)));
-        panel.addView(goals, new LinearLayout.LayoutParams(-1, dp(96)));
-        panel.addView(notes, new LinearLayout.LayoutParams(-1, dp(120)));
-        panel.addView(reflections, new LinearLayout.LayoutParams(-1, dp(120)));
-        panel.addView(summary, new LinearLayout.LayoutParams(-1, dp(96)));
+
+        LinearLayout board = new LinearLayout(this);
+        board.setOrientation(isWideLayout() ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        board.setGravity(Gravity.TOP);
+        board.setPadding(0, dp(12), 0, dp(12));
+
+        LinearLayout left = journalPaperCard();
+        left.addView(serif("Today's intentions", 24, Colors.ACCENT));
+        left.addView(text("What does a good day look like?", 13, Colors.MUTED, false));
+        left.addView(intentions, new LinearLayout.LayoutParams(-1, dp(104)));
+        left.addView(journalDivider());
+        left.addView(serif("Notes for today", 22, Colors.ACCENT));
+        left.addView(notes, new LinearLayout.LayoutParams(-1, dp(104)));
+        left.addView(journalDivider());
+        left.addView(serif("Long term goals", 22, Colors.ACCENT));
+        left.addView(goals, new LinearLayout.LayoutParams(-1, dp(104)));
+
+        LinearLayout right = journalPaperCard();
+        right.addView(serif("Today's reflections", 24, Colors.ACCENT));
+        right.addView(text("How was your day? What did you do? How do you feel?", 13, Colors.MUTED, false));
+        right.addView(reflections, new LinearLayout.LayoutParams(-1, dp(132)));
+        right.addView(journalDivider());
+        right.addView(serif("Dayflow summary", 22, Colors.ACCENT));
+        right.addView(text(metrics.trackedMs >= TimeUtil.HOUR
+                ? "Summarize using your timeline, intentions, and reflections."
+                : "Need at least 1 hour of timeline activity to summarize.", 13, Colors.MUTED, false));
+        right.addView(summary, new LinearLayout.LayoutParams(-1, dp(132)));
+
+        if (isWideLayout()) {
+            LinearLayout.LayoutParams leftLp = new LinearLayout.LayoutParams(0, -2, 1);
+            leftLp.setMargins(0, 0, dp(6), 0);
+            LinearLayout.LayoutParams rightLp = new LinearLayout.LayoutParams(0, -2, 1);
+            rightLp.setMargins(dp(6), 0, 0, 0);
+            board.addView(left, leftLp);
+            board.addView(right, rightLp);
+        } else {
+            LinearLayout.LayoutParams topLp = new LinearLayout.LayoutParams(-1, -2);
+            topLp.setMargins(0, 0, 0, dp(12));
+            board.addView(left, topLp);
+            board.addView(right, new LinearLayout.LayoutParams(-1, -2));
+        }
+        panel.addView(board);
 
         LinearLayout actions = row();
         Button save = pillButton("Save journal");
         save.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                DayGoal savedGoal = new DayGoal();
-                savedGoal.day = selectedDay;
-                savedGoal.focusTargetMinutes = parseInt(focusTarget.getText().toString(), 240);
-                savedGoal.distractionLimitMinutes = parseInt(distractionLimit.getText().toString(), 45);
-                savedGoal.skipped = skipped.isChecked();
-                db.saveDayGoal(savedGoal);
-
-                JournalEntry saved = new JournalEntry();
-                saved.day = selectedDay;
-                saved.intentions = intentions.getText().toString();
-                saved.goals = goals.getText().toString();
-                saved.notes = notes.getText().toString();
-                saved.reflections = reflections.getText().toString();
-                saved.summary = summary.getText().toString();
-                saved.status = "saved";
-                db.saveJournal(saved);
+                saveJournalFields(intentions, goals, notes, reflections, summary, "saved");
                 setStatus("Journal saved.");
+            }
+        });
+        Button generate = smallButton(entry.summary == null || entry.summary.trim().isEmpty() ? "Summarize" : "Regenerate");
+        generate.setEnabled(metrics.trackedMs >= TimeUtil.HOUR);
+        generate.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                saveJournalFields(intentions, goals, notes, reflections, summary, "reflection_saved");
+                generateJournalSummary();
+            }
+        });
+        Button reminders = smallButton("Reminders");
+        reminders.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.setSettingsSection("Other");
+                selectedTab = "Settings";
+                refresh();
             }
         });
         Button copy = smallButton("Copy");
@@ -1395,9 +1420,76 @@ public final class MainActivity extends Activity {
             }
         });
         actions.addView(save, new LinearLayout.LayoutParams(0, dp(44), 1));
-        actions.addView(copy, new LinearLayout.LayoutParams(dp(96), dp(44)));
+        actions.addView(generate, new LinearLayout.LayoutParams(dp(104), dp(44)));
+        actions.addView(reminders, new LinearLayout.LayoutParams(dp(100), dp(44)));
+        actions.addView(copy, new LinearLayout.LayoutParams(dp(72), dp(44)));
         panel.addView(actions);
         content.addView(panel);
+    }
+
+    private LinearLayout journalPaperCard() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(18), dp(18), dp(18), dp(18));
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{Color.argb(120, 255, 255, 255), Color.argb(230, 255, 255, 255), Color.argb(120, 255, 255, 255)});
+        bg.setStroke(1, Color.argb(210, 255, 255, 255));
+        bg.setCornerRadius(dp(12));
+        card.setBackground(bg);
+        card.setElevation(dp(2));
+        return card;
+    }
+
+    private View journalDivider() {
+        View divider = new View(this);
+        divider.setBackgroundColor(Color.argb(150, 232, 225, 218));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, Math.max(1, dp(1)));
+        lp.setMargins(0, dp(12), 0, dp(12));
+        divider.setLayoutParams(lp);
+        return divider;
+    }
+
+    private String journalHeadline() {
+        return selectedDay.equals(TimeUtil.dayKey(System.currentTimeMillis()))
+                ? "Today, " + new SimpleDateFormat("MMMM d", Locale.US).format(new Date())
+                : "Journal · " + selectedDay;
+    }
+
+    private boolean isWideLayout() {
+        return getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density >= 640;
+    }
+
+    private void saveJournalFields(EditText intentions, EditText goals, EditText notes, EditText reflections, EditText summary, String status) {
+        JournalEntry saved = new JournalEntry();
+        saved.day = selectedDay;
+        saved.intentions = intentions.getText().toString();
+        saved.goals = goals.getText().toString();
+        saved.notes = notes.getText().toString();
+        saved.reflections = reflections.getText().toString();
+        saved.summary = summary.getText().toString();
+        saved.status = status;
+        db.saveJournal(saved);
+    }
+
+    private void generateJournalSummary() {
+        final String day = selectedDay;
+        setStatus("Generating journal summary...");
+        new Thread(new Runnable() {
+            @Override public void run() {
+                final String generated = new ChatResponder(MainActivity.this).journalSummary(day);
+                JournalEntry saved = db.fetchJournal(day);
+                saved.day = day;
+                saved.summary = generated;
+                saved.status = "summary";
+                db.saveJournal(saved);
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        setStatus("Journal summary generated.");
+                        refresh();
+                    }
+                });
+            }
+        }, "dayflow-journal-summary").start();
     }
 
     private void renderReview(List<TimelineCard> cards) {

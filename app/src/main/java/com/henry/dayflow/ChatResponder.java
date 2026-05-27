@@ -50,6 +50,19 @@ final class ChatResponder {
         return standupFallback(day);
     }
 
+    String journalSummary(String day) {
+        String prompt = promptFor(day, "Write a warm first-person Dayflow journal summary for this day. Use the user's intentions, notes, reflections, timeline cards, and metrics only. Write 2 concise paragraphs. Mention what mattered, what got in the way, and one gentle closing observation. Do not invent facts.");
+        String answer = tryProvider(prefs.provider(), prompt);
+        if (answer != null && !answer.trim().isEmpty()) return answer;
+
+        if (!sameProvider(prefs.provider(), prefs.backupProvider())) {
+            answer = tryProvider(prefs.backupProvider(), prompt);
+            if (answer != null && !answer.trim().isEmpty()) return answer;
+        }
+
+        return journalSummaryFallback(day);
+    }
+
     private String tryProvider(String providerName, String prompt) {
         String provider = providerName == null ? "" : providerName.toLowerCase(Locale.US);
         try {
@@ -197,6 +210,39 @@ final class ChatResponder {
         }
         if (blockers.toString().trim().equals("Blockers")) blockers.append("- No obvious blockers detected yet.\n");
         return highlights.append(tasks).append(blockers).toString();
+    }
+
+    private String journalSummaryFallback(String day) {
+        DashboardMetrics metrics = db.dashboardForDay(day);
+        JournalEntry journal = db.fetchJournal(day);
+        List<TimelineCard> cards = db.fetchTimelineCards(day);
+        StringBuilder summary = new StringBuilder();
+        summary.append("Today Dayflow tracked ").append(TimeUtil.shortDuration(metrics.trackedMs))
+                .append(" across ").append(metrics.cardCount).append(" timeline cards");
+        if (metrics.trackedMs > 0) {
+            summary.append(", with ").append(metrics.productivePercent()).append("% productive time and ")
+                    .append(TimeUtil.shortDuration(metrics.distractionMs)).append(" marked as distraction");
+        }
+        summary.append(". ");
+        if (!blank(journal.intentions).equals("-")) {
+            summary.append("You came in intending to ").append(sentenceTrim(journal.intentions)).append(". ");
+        }
+        if (!cards.isEmpty()) {
+            summary.append("The clearest activity was ").append(cards.get(0).title).append(".");
+        }
+        summary.append("\n\n");
+        if (!blank(journal.reflections).equals("-")) {
+            summary.append("Your reflection: ").append(sentenceTrim(journal.reflections)).append(".");
+        } else {
+            summary.append("Add a reflection to make this summary feel more personal and complete.");
+        }
+        return summary.toString();
+    }
+
+    private static String sentenceTrim(String value) {
+        String clean = blank(value).replace('\n', ' ').trim();
+        if (clean.endsWith(".") || clean.endsWith("!") || clean.endsWith("?")) clean = clean.substring(0, clean.length() - 1);
+        return clean;
     }
 
     private static String postJson(String endpoint, String json, int readTimeoutMs) throws Exception {

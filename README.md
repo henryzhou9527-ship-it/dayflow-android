@@ -22,6 +22,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Daily view surfaces day-goal progress, focus summaries, distraction summaries, an original-style touch workflow grid with dynamic time windows, totals, stats, distraction markers, and editable Dayflow-style standup cards for highlights, tasks, and blockers.
 - Daily standups are stored by day and can be saved or regenerated through the selected Gemini/Ollama provider with local fallback.
 - Journal reminders can schedule recurring intention and reflection notifications on selected weekdays, with boot-time rescheduling.
+- Journal uses an original-style two-page board for intentions, notes, long-term goals, reflections, and Dayflow-generated daily summaries.
 - Redacts screenshots for blocked apps while still preserving timeline continuity.
 - Recording/privacy settings include per-app blocking plus capture cadence, batch size, max gap, and card lookback controls.
 - Supports timed/indefinite recording pauses and shows saved screenshots plus playable timelapses inside review cards for frame-by-frame context.
