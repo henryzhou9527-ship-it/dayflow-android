@@ -703,6 +703,11 @@ public final class MainActivity extends Activity {
         content.addView(treemap, new LinearLayout.LayoutParams(-1, dp(430)));
         addGap(14);
 
+        WeeklySankeyView sankey = new WeeklySankeyView(this);
+        sankey.setCards(start, cards);
+        content.addView(sankey, new LinearLayout.LayoutParams(-1, dp(520)));
+        addGap(14);
+
         WeeklyInteractionGraphView graph = new WeeklyInteractionGraphView(this);
         graph.setCards(cards);
         content.addView(graph, new LinearLayout.LayoutParams(-1, dp(520)));
