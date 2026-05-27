@@ -762,24 +762,9 @@ public final class MainActivity extends Activity {
         summary.addView(text("Busiest day: " + busiestDayLabel(weekStart, cards), 14, Colors.MUTED, false));
         content.addView(summary);
 
-        LinearLayout suggestions = panel();
-        suggestions.addView(text("1:1 SUGGESTIONS", 12, Colors.MUTED, true));
-        suggestions.addView(serif("Top level updates", 26, Colors.TEXT));
-        int categoryCount = 0;
-        for (Map.Entry<String, Long> entry : DayflowDatabase.sortedByDuration(metrics.categoryMs)) {
-            if (categoryCount++ >= 4) break;
-            suggestions.addView(text("• " + entry.getKey() + ": " + TimeUtil.shortDuration(entry.getValue()) + " across " + countCardsInCategory(cards, entry.getKey()) + " cards.", 14, Colors.TEXT, false));
-        }
-        suggestions.addView(serif("Next steps", 24, Colors.ACCENT));
-        int nextCount = 0;
-        for (TimelineCard card : usefulCardsByDuration(cards)) {
-            if (nextCount++ >= 3) break;
-            suggestions.addView(text("• Pick up from " + card.title + ": " + shortText(card.summary, 120), 14, Colors.TEXT, false));
-        }
-        if (nextCount == 0) {
-            suggestions.addView(text("• Build one focused block this week so Dayflow has a useful thread to resume.", 14, Colors.TEXT, false));
-        }
-        content.addView(suggestions);
+        WeeklyNarrativeView narrative = new WeeklyNarrativeView(this);
+        narrative.setCards(cards);
+        content.addView(narrative, new LinearLayout.LayoutParams(-1, dp(780)));
 
         LinearLayout apps = panel();
         apps.addView(text("APPLICATION INTERACTIONS", 12, Colors.MUTED, true));
