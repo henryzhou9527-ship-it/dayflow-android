@@ -979,8 +979,10 @@ public final class MainActivity extends Activity {
     }
 
     private void completeOnboarding() {
+        db.createOnboardingCard(prefs.provider());
         prefs.setDidOnboard(true);
         prefs.setOnboardingStep(0);
+        selectedDay = TimeUtil.dayKey(System.currentTimeMillis());
         selectedTab = "Timeline";
         buildUi();
         setStatus("Setup complete. Start recording when you are ready.");

@@ -56,7 +56,7 @@ ANDROID_HOME=/Users/henry/.cache/dayflow-build/android-sdk \
 2. Open Dayflow and follow the first-run setup: welcome, role, preferences, AI provider, categories, permissions, completion.
 3. Enable Usage Access when prompted so foreground app labels are available.
 4. Approve the Android screen-capture prompt.
-5. Leave it running. Timeline cards appear after a complete 15-minute batch.
+5. Dayflow creates an `Installed Dayflow!` sample card immediately, then real timeline cards appear after a complete 15-minute batch.
 6. Optional: add a Gemini API key or Ollama endpoint during setup, or rerun setup later from `Settings`.
 
 ## Current Limits

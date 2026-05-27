@@ -353,6 +353,42 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         }
     }
 
+    synchronized void createOnboardingCard(String provider) {
+        long now = System.currentTimeMillis();
+        String day = TimeUtil.dayKey(now);
+        SQLiteDatabase db = getWritableDatabase();
+        Cursor existing = db.rawQuery(
+                "SELECT id FROM timeline_cards WHERE day = ? AND metadata LIKE ? AND is_deleted = 0 LIMIT 1",
+                new String[]{day, "%onboarding_card=1%"});
+        try {
+            if (existing.moveToFirst()) return;
+        } finally {
+            existing.close();
+        }
+
+        String category = "Work";
+        for (Category candidate : fetchCategories()) {
+            if (!candidate.idle) {
+                category = candidate.name;
+                break;
+            }
+        }
+
+        ContentValues values = new ContentValues();
+        values.putNull("batch_id");
+        values.put("start_ts", now - 13 * TimeUtil.MINUTE);
+        values.put("end_ts", now);
+        values.put("day", day);
+        values.put("title", "Installed Dayflow!");
+        values.put("summary", onboardingSummary(provider));
+        values.put("detailed_summary", "This sample card mirrors the original Dayflow onboarding card so the first timeline is not empty. Real cards will replace it once Dayflow has enough captured screen history to analyze.");
+        values.put("category", category);
+        values.put("subcategory", "Setup");
+        values.put("metadata", "onboarding_card=1;app=dayflow.so;provider=" + safeMetadata(provider) + ";");
+        values.put("created_at", now);
+        db.insert("timeline_cards", null, values);
+    }
+
     synchronized DashboardMetrics dashboardForDay(String day) {
         List<TimelineCard> cards = fetchTimelineCards(day);
         DashboardMetrics metrics = new DashboardMetrics();
@@ -673,6 +709,22 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         if (start < 0) return null;
         int end = metadata.indexOf(';', start);
         return end > start ? metadata.substring(start + marker.length(), end) : metadata.substring(start + marker.length());
+    }
+
+    private static String onboardingSummary(String provider) {
+        String value = provider == null ? "" : provider.trim().toLowerCase(Locale.US);
+        if (value.contains("gemini")) {
+            return "You successfully installed Dayflow and configured it with Gemini AI. Come back in 30 minutes to see your first real activity card. This is a sample card, so you can see what your timeline will look like.";
+        }
+        if (value.contains("ollama")) {
+            return "You successfully installed Dayflow with Ollama. Your data stays on your device while the local model helps read the day. Come back in 30 minutes to see your first real activity card.";
+        }
+        return "You successfully installed Dayflow. Come back in 30 minutes to see your first real activity card. This is a sample card, so you can see what your timeline will look like.";
+    }
+
+    private static String safeMetadata(String value) {
+        if (value == null) return "Heuristic";
+        return value.replace(';', ' ').replace('\n', ' ').trim();
     }
 
     private static long longFor(SQLiteDatabase db, String sql) {
