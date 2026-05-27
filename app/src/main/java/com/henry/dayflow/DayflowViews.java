@@ -539,53 +539,360 @@ final class TimelineCanvasView extends View {
 
 final class DailyWorkflowView extends View {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final List<TouchTarget> touchTargets = new ArrayList<>();
     private List<TimelineCard> cards = new ArrayList<>();
     private String day = TimeUtil.dayKey(System.currentTimeMillis());
+    private String selectedDetail = "Tap a colored block to inspect the activity.";
 
     DailyWorkflowView(Context context) {
         super(context);
-        setMinimumHeight(dp(250));
+        setMinimumHeight(dp(520));
+        setWillNotDraw(false);
     }
 
     void setCards(String day, List<TimelineCard> cards) {
         this.day = day;
         this.cards = cards == null ? new ArrayList<TimelineCard>() : cards;
+        this.selectedDetail = "Tap a colored block to inspect the activity.";
         invalidate();
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
+        touchTargets.clear();
+        DailyWorkflow workflow = computeWorkflow();
         drawPanel(canvas, 0, 0, getWidth(), getHeight());
-        drawSerif(canvas, "Your workflow so far", dp(16), dp(38), dp(24), Colors.ACCENT);
-        String[] rows = {"Work", "Communication", "Personal", "Distraction", "Idle"};
-        long start = TimeUtil.dayStartMs(day);
-        float top = dp(62);
-        float left = dp(108);
-        float cell = Math.max(dp(7), (getWidth() - left - dp(20)) / 96f);
-        for (int r = 0; r < rows.length; r++) {
-            drawSans(canvas, rows[r], dp(12), top + r * dp(24) + dp(13), dp(10), Colors.MUTED);
-            for (int i = 0; i < 96; i++) {
-                paint.setColor(ColorUtils.withAlpha(Colors.MUTED, 26));
-                canvas.drawRoundRect(new RectF(left + i * cell, top + r * dp(24), left + i * cell + cell - 1, top + r * dp(24) + dp(16)), 2, 2, paint);
+        String heading = day.equals(TimeUtil.dayKey(System.currentTimeMillis()))
+                ? "Today so far. Come back tomorrow for the full day view."
+                : "Your workflow on " + day;
+        drawSerif(canvas, fitText(heading, getWidth() - dp(36), dp(22), false), dp(18), dp(38), dp(22), Colors.ACCENT);
+        drawSans(canvas, workflow.slotCount + " time blocks from " + hourLabel(workflow.visibleStart)
+                + " to " + hourLabel(workflow.visibleEnd), dp(18), dp(62), dp(12), Colors.MUTED);
+
+        float statsBottom = drawStats(canvas, workflow, dp(18), dp(78), getWidth() - dp(36));
+        float gridTop = statsBottom + dp(16);
+        drawWorkflowGrid(canvas, workflow, dp(14), gridTop, getWidth() - dp(28));
+        drawTotals(canvas, workflow, dp(18), getHeight() - dp(82), getWidth() - dp(36));
+        drawSelectedDetail(canvas, dp(18), getHeight() - dp(30), getWidth() - dp(36));
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        if (event.getAction() == MotionEvent.ACTION_UP) {
+            for (TouchTarget target : touchTargets) {
+                if (target.rect.contains(event.getX(), event.getY())) {
+                    selectedDetail = target.detail;
+                    invalidate();
+                    return true;
+                }
             }
+            selectedDetail = "Tap a colored block to inspect the activity.";
+            invalidate();
+            return true;
         }
+        return true;
+    }
+
+    private DailyWorkflow computeWorkflow() {
+        DailyWorkflow workflow = new DailyWorkflow();
+        long startMs = TimeUtil.dayStartMs(day);
+        List<CardSegment> segments = new ArrayList<>();
         for (TimelineCard card : cards) {
-            int row = rowFor(card.category);
-            int s = (int) ((card.startMs - start) / (15 * TimeUtil.MINUTE));
-            int e = Math.max(s + 1, (int) ((card.endMs - start) / (15 * TimeUtil.MINUTE)));
-            paint.setColor(Colors.colorForCategory(card.category));
-            for (int i = Math.max(0, s); i < Math.min(96, e); i++) {
-                canvas.drawRoundRect(new RectF(left + i * cell, top + row * dp(24), left + i * cell + cell - 1, top + row * dp(24) + dp(16)), 2, 2, paint);
+            if (isSystem(card.category)) continue;
+            int start = minuteFor(card.startMs, startMs);
+            int end = Math.max(start + 1, minuteFor(card.endMs, startMs));
+            segments.add(new CardSegment(card, start, end));
+        }
+        Collections.sort(segments, new Comparator<CardSegment>() {
+            @Override public int compare(CardSegment a, CardSegment b) {
+                if (a.startMinute != b.startMinute) return a.startMinute - b.startMinute;
+                return a.endMinute - b.endMinute;
+            }
+        });
+
+        if (segments.isEmpty()) {
+            workflow.visibleStart = 9 * 60;
+            workflow.visibleEnd = 21 * 60;
+        } else {
+            int first = Integer.MAX_VALUE;
+            int last = Integer.MIN_VALUE;
+            for (CardSegment segment : segments) {
+                first = Math.min(first, segment.startMinute);
+                last = Math.max(last, segment.endMinute);
+            }
+            int alignedStart = (int) Math.floor(first / 60f) * 60;
+            int alignedEnd = (int) Math.ceil(last / 60f) * 60;
+            workflow.visibleStart = alignedStart;
+            workflow.visibleEnd = Math.max(alignedStart + 12 * 60, alignedEnd);
+        }
+        workflow.slotCount = Math.max(1, Math.round((workflow.visibleEnd - workflow.visibleStart) / 15f));
+
+        seedRows(workflow);
+        String previousKey = null;
+        int previousEnd = -1;
+        for (CardSegment segment : segments) {
+            String key = normalized(segment.card.category);
+            if (key.isEmpty()) key = "uncategorized";
+            boolean distraction = isDistraction(segment.card.category);
+            boolean idle = isIdle(segment.card.category);
+            long duration = segment.card.durationMs();
+            addDuration(workflow.totals, clean(segment.card.category, "Uncategorized"), duration);
+
+            if (distraction) {
+                workflow.interruptions++;
+                workflow.distractedMs += duration;
+                workflow.distractionMarkers.add(new Marker(segment));
+            } else {
+                Row row = rowFor(workflow, key, clean(segment.card.category, "Uncategorized"), Colors.colorForCategory(segment.card.category));
+                fillOccupancy(row, segment, workflow);
+                if (idle) workflow.distractedMs += duration;
+                else workflow.focusedMs += duration;
+            }
+
+            if (previousKey != null && !previousKey.equals(key)) workflow.contextSwitches++;
+            if (previousEnd >= 0 && segment.startMinute > previousEnd) {
+                workflow.transitionMs += (segment.startMinute - previousEnd) * TimeUtil.MINUTE;
+            }
+            previousKey = key;
+            previousEnd = Math.max(previousEnd, segment.endMinute);
+        }
+        return workflow;
+    }
+
+    private void seedRows(DailyWorkflow workflow) {
+        rowFor(workflow, "work", "Work", Colors.WORK);
+        rowFor(workflow, "communication", "Communication", Colors.COMMUNICATION);
+        rowFor(workflow, "personal", "Personal", Colors.PERSONAL);
+        rowFor(workflow, "idle", "Idle", Colors.IDLE);
+    }
+
+    private void fillOccupancy(Row row, CardSegment segment, DailyWorkflow workflow) {
+        int clippedStart = Math.max(segment.startMinute, workflow.visibleStart);
+        int clippedEnd = Math.min(segment.endMinute, workflow.visibleEnd);
+        if (clippedEnd <= clippedStart) return;
+        for (int i = 0; i < workflow.slotCount; i++) {
+            int slotStart = workflow.visibleStart + i * 15;
+            int slotEnd = Math.min(workflow.visibleEnd, slotStart + 15);
+            int overlap = Math.max(0, Math.min(clippedEnd, slotEnd) - Math.max(clippedStart, slotStart));
+            if (overlap <= 0) continue;
+            row.occupancy[i] = Math.min(1f, row.occupancy[i] + overlap / 15f);
+            if (row.info[i] == null || overlap > row.info[i].overlapMinutes) {
+                row.info[i] = new SlotInfo(segment.card, overlap);
             }
         }
     }
 
-    private int rowFor(String category) {
-        if ("Communication".equals(category)) return 1;
-        if ("Personal".equals(category)) return 2;
-        if ("Distraction".equals(category)) return 3;
-        if ("Idle".equals(category)) return 4;
-        return 0;
+    private float drawStats(Canvas canvas, DailyWorkflow workflow, float x, float y, float width) {
+        String[][] stats = new String[][]{
+                {"Context switched", countText(workflow.contextSwitches)},
+                {"Interrupted", countText(workflow.interruptions)},
+                {"Focused for", TimeUtil.shortDuration(workflow.focusedMs)},
+                {"Distracted for", TimeUtil.shortDuration(workflow.distractedMs)},
+                {"Transitioning time", TimeUtil.shortDuration(workflow.transitionMs)}
+        };
+        int columns = width >= dp(660) ? 5 : 2;
+        float gap = dp(8);
+        float chipW = (width - gap * (columns - 1)) / columns;
+        float chipH = dp(42);
+        for (int i = 0; i < stats.length; i++) {
+            int row = i / columns;
+            int col = i % columns;
+            float left = x + col * (chipW + gap);
+            float top = y + row * (chipH + gap);
+            paint.setColor(Color.argb(132, 255, 255, 255));
+            canvas.drawRoundRect(new RectF(left, top, left + chipW, top + chipH), dp(10), dp(10), paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(1f);
+            paint.setColor(0xffebe6e3);
+            canvas.drawRoundRect(new RectF(left, top, left + chipW, top + chipH), dp(10), dp(10), paint);
+            paint.setStyle(Paint.Style.FILL);
+            drawSans(canvas, fitText(stats[i][0], chipW - dp(16), dp(10), false), left + dp(8), top + dp(15), dp(10), Colors.MUTED);
+            drawSans(canvas, fitText(stats[i][1], chipW - dp(16), dp(14), true), left + dp(8), top + dp(32), dp(14), Colors.TEXT, true);
+        }
+        int rows = (int) Math.ceil(stats.length / (float) columns);
+        return y + rows * chipH + Math.max(0, rows - 1) * gap;
+    }
+
+    private void drawWorkflowGrid(Canvas canvas, DailyWorkflow workflow, float x, float y, float width) {
+        float labelW = Math.min(dp(118), Math.max(dp(78), width * 0.27f));
+        float gridLeft = x + labelW + dp(13);
+        float gridRight = x + width - dp(10);
+        float gridW = Math.max(dp(80), gridRight - gridLeft);
+        float rowH = dp(18);
+        float gap = dp(3);
+        float cellW = Math.max(1f, (gridW - gap * Math.max(0, workflow.slotCount - 1)) / workflow.slotCount);
+        float top = y + dp(14);
+
+        paint.setColor(Color.argb(138, 255, 255, 255));
+        canvas.drawRoundRect(new RectF(x, y, x + width, y + gridHeight(workflow) + dp(74)), dp(12), dp(12), paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(1f);
+        paint.setColor(0xffebe6e3);
+        canvas.drawRoundRect(new RectF(x, y, x + width, y + gridHeight(workflow) + dp(74)), dp(12), dp(12), paint);
+        paint.setStyle(Paint.Style.FILL);
+
+        List<Row> visibleRows = visibleRows(workflow);
+        for (int r = 0; r < visibleRows.size(); r++) {
+            Row row = visibleRows.get(r);
+            float yy = top + r * (rowH + gap);
+            drawSans(canvas, fitText(row.name, labelW - dp(8), dp(11), false), x + dp(8), yy + dp(13), dp(11), Colors.TEXT);
+            for (int i = 0; i < workflow.slotCount; i++) {
+                float left = gridLeft + i * (cellW + gap);
+                RectF cell = new RectF(left, yy, left + cellW, yy + rowH);
+                paint.setColor(Color.argb(58, 242, 238, 234));
+                canvas.drawRoundRect(cell, dp(2), dp(2), paint);
+                if (row.occupancy[i] > 0f) {
+                    int alpha = 76 + Math.round(179 * Math.min(1f, row.occupancy[i]));
+                    paint.setColor(ColorUtils.withAlpha(row.color, alpha));
+                    canvas.drawRoundRect(cell, dp(2), dp(2), paint);
+                    if (row.info[i] != null) {
+                        touchTargets.add(new TouchTarget(cell, detailFor(row.info[i].card, row.name)));
+                    }
+                }
+            }
+        }
+
+        float markerTop = top + visibleRows.size() * (rowH + gap) + dp(6);
+        if (!workflow.distractionMarkers.isEmpty()) {
+            drawSans(canvas, "Distractions", x + dp(8), markerTop + dp(10), dp(11), Colors.TEXT);
+            RectF base = new RectF(gridLeft, markerTop, gridRight, markerTop + dp(10));
+            paint.setColor(Color.argb(72, 242, 238, 234));
+            canvas.drawRoundRect(base, dp(2), dp(2), paint);
+            int totalMinutes = Math.max(1, workflow.visibleEnd - workflow.visibleStart);
+            for (Marker marker : workflow.distractionMarkers) {
+                float left = gridLeft + ((marker.startMinute - workflow.visibleStart) / (float) totalMinutes) * gridW;
+                float right = gridLeft + ((marker.endMinute - workflow.visibleStart) / (float) totalMinutes) * gridW;
+                RectF rect = new RectF(Math.max(gridLeft, left), markerTop, Math.min(gridRight, Math.max(left + dp(3), right)), markerTop + dp(10));
+                paint.setColor(ColorUtils.withAlpha(Colors.DISTRACTION, 220));
+                canvas.drawRoundRect(rect, dp(2), dp(2), paint);
+                touchTargets.add(new TouchTarget(rect, "Distraction: " + marker.title + " / " + TimeUtil.shortDuration(marker.durationMs)));
+            }
+            markerTop += dp(18);
+        }
+
+        float axisY = markerTop + dp(10);
+        paint.setColor(0xffe0d9d5);
+        canvas.drawRect(gridLeft, axisY, gridRight, axisY + Math.max(1, dp(1)), paint);
+        for (int hour = firstHour(workflow.visibleStart); hour <= lastHour(workflow.visibleEnd); hour++) {
+            float fraction = (hour * 60 - workflow.visibleStart) / (float) Math.max(1, workflow.visibleEnd - workflow.visibleStart);
+            if (fraction < -0.01f || fraction > 1.01f) continue;
+            float xx = gridLeft + Math.max(0f, Math.min(1f, fraction)) * gridW;
+            paint.setColor(ColorUtils.withAlpha(Colors.MUTED, 90));
+            canvas.drawLine(xx, axisY - dp(4), xx, axisY + dp(4), paint);
+            drawSans(canvas, hourLabel(hour * 60), Math.min(xx, gridRight - dp(26)), axisY + dp(18), dp(10), Colors.MUTED);
+        }
+    }
+
+    private void drawTotals(Canvas canvas, DailyWorkflow workflow, float x, float y, float width) {
+        drawSerif(canvas, day.equals(TimeUtil.dayKey(System.currentTimeMillis())) ? "Today's total so far" : "Day total", x, y, dp(15), Colors.MUTED);
+        float cursor = x + dp(126);
+        int shown = 0;
+        for (Map.Entry<String, Long> entry : sortedTotals(workflow.totals)) {
+            if (shown++ >= 4) break;
+            String label = entry.getKey() + " " + TimeUtil.shortDuration(entry.getValue());
+            int color = Colors.colorForCategory(entry.getKey());
+            drawSans(canvas, fitText(label, Math.max(dp(72), width - (cursor - x)), dp(12), true), cursor, y, dp(12), color, true);
+            cursor += Math.min(dp(150), Math.max(dp(82), paint.measureText(label) + dp(18)));
+            if (cursor > x + width - dp(60)) break;
+        }
+        if (workflow.totals.isEmpty()) {
+            drawSans(canvas, "No captured activity yet.", cursor, y, dp(12), Colors.MUTED);
+        }
+    }
+
+    private void drawSelectedDetail(Canvas canvas, float x, float y, float width) {
+        paint.setColor(Color.argb(132, 255, 255, 255));
+        canvas.drawRoundRect(new RectF(x, y - dp(22), x + width, y + dp(10)), dp(10), dp(10), paint);
+        drawSans(canvas, fitText(selectedDetail, width - dp(18), dp(12), false), x + dp(9), y - dp(1), dp(12), Colors.TEXT);
+    }
+
+    private float gridHeight(DailyWorkflow workflow) {
+        return visibleRows(workflow).size() * (dp(18) + dp(3))
+                + (workflow.distractionMarkers.isEmpty() ? 0 : dp(24)) + dp(42);
+    }
+
+    private List<Row> visibleRows(DailyWorkflow workflow) {
+        List<Row> out = new ArrayList<>();
+        for (Row row : workflow.rows.values()) {
+            if ("distraction".equals(row.key)) continue;
+            out.add(row);
+        }
+        return out;
+    }
+
+    private Row rowFor(DailyWorkflow workflow, String key, String name, int color) {
+        Row row = workflow.rows.get(key);
+        if (row == null) {
+            row = new Row(key, name, color, workflow.slotCount);
+            workflow.rows.put(key, row);
+        }
+        return row;
+    }
+
+    private List<Map.Entry<String, Long>> sortedTotals(Map<String, Long> totals) {
+        List<Map.Entry<String, Long>> entries = new ArrayList<>(totals.entrySet());
+        Collections.sort(entries, new Comparator<Map.Entry<String, Long>>() {
+            @Override public int compare(Map.Entry<String, Long> a, Map.Entry<String, Long> b) {
+                return Long.compare(b.getValue(), a.getValue());
+            }
+        });
+        return entries;
+    }
+
+    private static void addDuration(Map<String, Long> map, String key, long value) {
+        Long current = map.get(key);
+        map.put(key, current == null ? value : current + value);
+    }
+
+    private int minuteFor(long timestampMs, long dayStartMs) {
+        return Math.round((timestampMs - dayStartMs) / (float) TimeUtil.MINUTE) + 4 * 60;
+    }
+
+    private int firstHour(int minute) {
+        return (int) Math.ceil(minute / 60f);
+    }
+
+    private int lastHour(int minute) {
+        return (int) Math.floor(minute / 60f);
+    }
+
+    private String hourLabel(int minute) {
+        int hour = ((minute / 60) % 24 + 24) % 24;
+        if (hour == 0) return "12a";
+        if (hour < 12) return hour + "a";
+        if (hour == 12) return "12p";
+        return (hour - 12) + "p";
+    }
+
+    private String detailFor(TimelineCard card, String rowName) {
+        return TimeUtil.timeLabel(card.startMs) + " - " + TimeUtil.timeLabel(card.endMs)
+                + " / " + rowName + " / " + clean(card.title, "Untitled activity");
+    }
+
+    private static String countText(int count) {
+        return count == 1 ? "1 time" : count + " times";
+    }
+
+    private static boolean isSystem(String category) {
+        return normalized(category).contains("system");
+    }
+
+    private static boolean isDistraction(String category) {
+        return normalized(category).contains("distraction");
+    }
+
+    private static boolean isIdle(String category) {
+        return normalized(category).contains("idle");
+    }
+
+    private static String normalized(String value) {
+        return clean(value, "").toLowerCase(LocaleSafe.US).replaceAll("[^a-z0-9]+", "-").replaceAll("(^-|-$)", "");
+    }
+
+    private static String clean(String value, String fallback) {
+        if (value == null) return fallback;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? fallback : trimmed;
     }
 
     private void drawPanel(Canvas c, float x, float y, float w, float h) {
@@ -604,6 +911,100 @@ final class DailyWorkflowView extends View {
         paint.setTextSize(size);
         paint.setColor(color);
         c.drawText(text, x, y, paint);
+    }
+
+    private void drawSans(Canvas c, String text, float x, float y, float size, int color, boolean bold) {
+        paint.setTypeface(DayflowType.sans(getContext(), bold));
+        paint.setTextSize(size);
+        paint.setColor(color);
+        c.drawText(text, x, y, paint);
+    }
+
+    private String fitText(String text, float width, float size, boolean bold) {
+        String safe = text == null ? "" : text;
+        paint.setTypeface(DayflowType.sans(getContext(), bold));
+        paint.setTextSize(size);
+        if (paint.measureText(safe) <= width) return safe;
+        String suffix = "...";
+        int end = safe.length();
+        while (end > 1 && paint.measureText(safe.substring(0, end) + suffix) > width) end--;
+        return safe.substring(0, Math.max(1, end)) + suffix;
+    }
+
+    private static final class DailyWorkflow {
+        int visibleStart;
+        int visibleEnd;
+        int slotCount;
+        int contextSwitches;
+        int interruptions;
+        long focusedMs;
+        long distractedMs;
+        long transitionMs;
+        final LinkedHashMap<String, Row> rows = new LinkedHashMap<>();
+        final LinkedHashMap<String, Long> totals = new LinkedHashMap<>();
+        final List<Marker> distractionMarkers = new ArrayList<>();
+    }
+
+    private static final class Row {
+        final String key;
+        final String name;
+        final int color;
+        final float[] occupancy;
+        final SlotInfo[] info;
+
+        Row(String key, String name, int color, int slotCount) {
+            this.key = key;
+            this.name = name;
+            this.color = color;
+            this.occupancy = new float[slotCount];
+            this.info = new SlotInfo[slotCount];
+        }
+    }
+
+    private static final class SlotInfo {
+        final TimelineCard card;
+        final int overlapMinutes;
+
+        SlotInfo(TimelineCard card, int overlapMinutes) {
+            this.card = card;
+            this.overlapMinutes = overlapMinutes;
+        }
+    }
+
+    private static final class Marker {
+        final String title;
+        final int startMinute;
+        final int endMinute;
+        final long durationMs;
+
+        Marker(CardSegment segment) {
+            this.title = clean(segment.card.title, "Distraction");
+            this.startMinute = segment.startMinute;
+            this.endMinute = segment.endMinute;
+            this.durationMs = segment.card.durationMs();
+        }
+    }
+
+    private static final class CardSegment {
+        final TimelineCard card;
+        final int startMinute;
+        final int endMinute;
+
+        CardSegment(TimelineCard card, int startMinute, int endMinute) {
+            this.card = card;
+            this.startMinute = startMinute;
+            this.endMinute = endMinute;
+        }
+    }
+
+    private static final class TouchTarget {
+        final RectF rect;
+        final String detail;
+
+        TouchTarget(RectF rect, String detail) {
+            this.rect = new RectF(rect);
+            this.detail = detail;
+        }
     }
 }
 

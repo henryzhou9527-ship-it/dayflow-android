@@ -530,7 +530,7 @@ public final class MainActivity extends Activity {
 
         DailyWorkflowView workflow = new DailyWorkflowView(this);
         workflow.setCards(selectedDay, cards);
-        content.addView(workflow, new LinearLayout.LayoutParams(-1, dp(250)));
+        content.addView(workflow, new LinearLayout.LayoutParams(-1, dp(520)));
         addGap(14);
 
         renderDailyStandup(cards);
