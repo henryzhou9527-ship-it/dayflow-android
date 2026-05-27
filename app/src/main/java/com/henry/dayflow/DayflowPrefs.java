@@ -28,6 +28,10 @@ final class DayflowPrefs {
         return Math.max(15 * TimeUtil.MINUTE, prefs.getLong("card_lookback_ms", 45 * TimeUtil.MINUTE));
     }
 
+    String settingsSection() {
+        return prefs.getString("settings_section", "Account");
+    }
+
     String geminiApiKey() {
         return prefs.getString("gemini_api_key", "");
     }
@@ -54,6 +58,22 @@ final class DayflowPrefs {
 
     String ollamaModel() {
         return prefs.getString("ollama_model", "qwen3-vl:4b");
+    }
+
+    String outputLanguageOverride() {
+        return prefs.getString("output_language_override", "");
+    }
+
+    boolean analyticsEnabled() {
+        return prefs.getBoolean("analytics_enabled", false);
+    }
+
+    boolean showTimelineAppIcons() {
+        return prefs.getBoolean("show_timeline_app_icons", true);
+    }
+
+    boolean showDailyGoalPopups() {
+        return prefs.getBoolean("show_daily_goal_popups", true);
     }
 
     int retentionDays() {
@@ -151,6 +171,26 @@ final class DayflowPrefs {
         prefs.edit().putBoolean("use_cloud_analyzer", enabled).apply();
     }
 
+    void setScreenshotIntervalMs(long value) {
+        prefs.edit().putLong("screenshot_interval_ms", Math.max(5_000L, value)).apply();
+    }
+
+    void setTargetBatchMs(long value) {
+        prefs.edit().putLong("target_batch_ms", Math.max(5 * TimeUtil.MINUTE, value)).apply();
+    }
+
+    void setMaxGapMs(long value) {
+        prefs.edit().putLong("max_gap_ms", Math.max(30_000L, value)).apply();
+    }
+
+    void setCardLookbackMs(long value) {
+        prefs.edit().putLong("card_lookback_ms", Math.max(15 * TimeUtil.MINUTE, value)).apply();
+    }
+
+    void setSettingsSection(String section) {
+        prefs.edit().putString("settings_section", section == null || section.trim().isEmpty() ? "Account" : section.trim()).apply();
+    }
+
     void setProvider(String provider) {
         String value = provider == null || provider.trim().isEmpty() ? "Heuristic" : provider.trim();
         prefs.edit()
@@ -170,6 +210,22 @@ final class DayflowPrefs {
 
     void setOllamaModel(String model) {
         prefs.edit().putString("ollama_model", model == null || model.trim().isEmpty() ? "qwen3-vl:4b" : model.trim()).apply();
+    }
+
+    void setOutputLanguageOverride(String language) {
+        prefs.edit().putString("output_language_override", language == null ? "" : language.trim()).apply();
+    }
+
+    void setAnalyticsEnabled(boolean value) {
+        prefs.edit().putBoolean("analytics_enabled", value).apply();
+    }
+
+    void setShowTimelineAppIcons(boolean value) {
+        prefs.edit().putBoolean("show_timeline_app_icons", value).apply();
+    }
+
+    void setShowDailyGoalPopups(boolean value) {
+        prefs.edit().putBoolean("show_daily_goal_popups", value).apply();
     }
 
     void setRetentionDays(int days) {

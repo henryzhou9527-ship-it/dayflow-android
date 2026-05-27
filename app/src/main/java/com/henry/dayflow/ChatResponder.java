@@ -73,6 +73,9 @@ final class ChatResponder {
         prompt.append("You are Dayflow, a private work-journal assistant. ");
         prompt.append("Answer using only the timeline, journal, and metrics below. ");
         prompt.append("Be specific, concise, and useful. If the evidence is missing, say what is missing.\n\n");
+        if (!prefs.outputLanguageOverride().trim().isEmpty()) {
+            prompt.append("Output language: ").append(prefs.outputLanguageOverride().trim()).append("\n\n");
+        }
         prompt.append("Day: ").append(day).append("\n");
         prompt.append("Tracked: ").append(TimeUtil.shortDuration(metrics.trackedMs)).append("\n");
         prompt.append("Productive: ").append(metrics.productivePercent()).append("%\n");

@@ -234,10 +234,15 @@ final class GeminiActivityAnalyzer implements ActivityAnalyzer {
             metadata.append("- ").append(entry.getKey()).append(": ").append(entry.getValue()).append(" samples\n");
         }
 
+        String language = prefs.outputLanguageOverride();
+        String languageInstruction = language == null || language.trim().isEmpty()
+                ? ""
+                : "Write title, summary, and detailedSummary in " + language.trim() + ". ";
         return "You are Dayflow, an automatic private work journal. "
                 + "Analyze this Android screen batch and return ONLY JSON array cards. "
                 + "Each card must have startMs, endMs, category, subcategory, title, summary, detailedSummary, app. "
                 + "Allowed categories: Work, Communication, Personal, Distraction, Idle. "
+                + languageInstruction
                 + "Use context, not just app names. Keep cards chronological, non-overlapping, within "
                 + first.capturedAtMs + " and " + last.capturedAtMs + ". "
                 + "Foreground metadata:\n" + metadata;
@@ -378,10 +383,15 @@ final class OllamaActivityAnalyzer implements ActivityAnalyzer {
             metadata.append("- ").append(entry.getKey()).append(": ").append(entry.getValue()).append(" samples\n");
         }
 
+        String language = prefs.outputLanguageOverride();
+        String languageInstruction = language == null || language.trim().isEmpty()
+                ? ""
+                : "Write title, summary, and detailedSummary in " + language.trim() + ". ";
         return "You are Dayflow, a private automatic work journal. "
                 + "Look at the Android screenshots and foreground app metadata, then return ONLY a JSON array. "
                 + "Each object must include startMs, endMs, category, subcategory, title, summary, detailedSummary, app. "
                 + "Allowed categories: Work, Communication, Personal, Distraction, Idle. "
+                + languageInstruction
                 + "Write concise first-person journal-style summaries without saying 'the user'. "
                 + "Keep cards chronological, non-overlapping, and within " + first.capturedAtMs + " and " + last.capturedAtMs + ". "
                 + "If several screenshots show the same activity, merge them into one card. "

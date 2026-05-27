@@ -740,6 +740,14 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         getWritableDatabase().insertWithOnConflict("blocked_apps", null, values, SQLiteDatabase.CONFLICT_REPLACE);
     }
 
+    synchronized void clearBlockedApps() {
+        getWritableDatabase().delete("blocked_apps", null, null);
+    }
+
+    synchronized long blockedAppCount() {
+        return longFor(getReadableDatabase(), "SELECT COUNT(*) FROM blocked_apps WHERE is_blocked = 1");
+    }
+
     synchronized List<ForegroundAppReader.AppSnapshot> recentApps() {
         Cursor c = getReadableDatabase().rawQuery(
                 "SELECT package_name, COALESCE(MAX(app_label), package_name) FROM screenshots WHERE package_name IS NOT NULL GROUP BY package_name ORDER BY MAX(captured_at) DESC LIMIT 24",

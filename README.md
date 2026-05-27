@@ -11,6 +11,8 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Supports heuristic analysis, Gemini vision analysis, and Ollama local vision models such as `qwen3-vl:4b`.
 - Chat uses saved timeline cards, journal notes, category totals, and recent chat history, then answers through Gemini or Ollama when configured.
 - Provider settings include a backup provider so timeline analysis and chat can retry through another route before falling back locally.
+- Settings are organized into Dayflow-like Account, Storage, Privacy, Providers, Export, and Other sections.
+- Other settings include app preference toggles and an output-language override that is passed into timeline analysis and chat prompts.
 - Adds first-run onboarding, journal entries, daily goals, review ratings, editable categories, storage stats, per-app privacy blocking, day deletion, and reprocessing controls.
 - Timeline and review cards support manual category reassignment and single-card deletion, matching the original Dayflow correction workflow.
 - Timeline and review cards can generate, save, regenerate, and play MP4 timelapse summaries from the card's captured screenshots.
@@ -18,6 +20,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Daily standups are stored by day and can be saved or regenerated through the selected Gemini/Ollama provider with local fallback.
 - Journal reminders can schedule recurring intention and reflection notifications on selected weekdays, with boot-time rescheduling.
 - Redacts screenshots for blocked apps while still preserving timeline continuity.
+- Recording/privacy settings include per-app blocking plus capture cadence, batch size, max gap, and card lookback controls.
 - Supports timed/indefinite recording pauses and shows saved screenshots plus playable timelapses inside review cards for frame-by-frame context.
 - Weekly view supports Monday-based week navigation, focus heatmaps, time distribution, top-level updates, next-step suggestions, and application interaction summaries.
 - Exports any date range as Markdown through Android's document picker, with clipboard fallback.

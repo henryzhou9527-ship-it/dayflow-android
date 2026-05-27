@@ -991,6 +991,38 @@ public final class MainActivity extends Activity {
     private void renderSettings() {
         LinearLayout panel = panel();
         panel.addView(serif("Settings", 30, Colors.TEXT));
+        String section = settingsSection();
+        addSettingsSectionSelector(panel, section);
+        if ("Account".equals(section)) {
+            renderSettingsAccount(panel);
+            content.addView(panel);
+            return;
+        }
+        if ("Storage".equals(section)) {
+            renderSettingsStorage(panel);
+            content.addView(panel);
+            return;
+        }
+        if ("Privacy".equals(section)) {
+            renderSettingsPrivacy(panel);
+            content.addView(panel);
+            return;
+        }
+        if ("Providers".equals(section)) {
+            renderSettingsProviders(panel);
+            content.addView(panel);
+            return;
+        }
+        if ("Export".equals(section)) {
+            renderSettingsData(panel);
+            content.addView(panel);
+            return;
+        }
+        if ("Other".equals(section)) {
+            renderSettingsOther(panel);
+            content.addView(panel);
+            return;
+        }
         panel.addView(text("Permissions", 13, Colors.MUTED, true));
 
         Button usage = pillButton(appReader.hasUsageAccess() ? "Usage access enabled" : "Open usage access");
@@ -1218,6 +1250,329 @@ public final class MainActivity extends Activity {
             panel.addView(blockedSwitch(app));
         }
         content.addView(panel);
+    }
+
+    private void addSettingsSectionSelector(LinearLayout panel, String selected) {
+        HorizontalScrollView scroll = new HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(6), 0, dp(12));
+        scroll.addView(row, new HorizontalScrollView.LayoutParams(-2, dp(58)));
+        String[] sections = new String[]{"Account", "Storage", "Privacy", "Providers", "Export", "Other"};
+        for (String section : sections) {
+            Button button = section.equals(selected) ? pillButton(section) : smallButton(section);
+            final String target = section;
+            button.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View view) {
+                    prefs.setSettingsSection(target);
+                    refresh();
+                }
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(112), dp(40));
+            lp.setMargins(0, 0, dp(8), 0);
+            row.addView(button, lp);
+        }
+        panel.addView(scroll);
+    }
+
+    private String settingsSection() {
+        String section = prefs.settingsSection();
+        if ("Account".equals(section) || "Storage".equals(section) || "Privacy".equals(section)
+                || "Providers".equals(section) || "Export".equals(section) || "Other".equals(section)) {
+            return section;
+        }
+        return "Account";
+    }
+
+    private void renderSettingsAccount(LinearLayout panel) {
+        panel.addView(text("Account", 13, Colors.MUTED, true));
+        panel.addView(text("Local Android build · " + appVersionLabel(), 14, Colors.TEXT, false));
+        panel.addView(text("Role: " + prefs.onboardingRole() + "\nProvider: " + prefs.provider() + "\nBackup: " + prefs.backupProvider(), 14, Colors.MUTED, false));
+
+        Button setup = pillButton("Run first-run setup again");
+        setup.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.setDidOnboard(false);
+                prefs.setOnboardingStep(0);
+                selectedTab = "Onboarding";
+                buildUi();
+                refresh();
+            }
+        });
+        panel.addView(setup, new LinearLayout.LayoutParams(-1, dp(44)));
+
+        panel.addView(text("Permissions", 13, Colors.MUTED, true));
+        Button usage = pillButton(appReader.hasUsageAccess() ? "Usage access enabled" : "Open usage access");
+        usage.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { startActivity(appReader.usageAccessIntent()); }
+        });
+        panel.addView(usage, new LinearLayout.LayoutParams(-1, dp(44)));
+
+        Button capture = pillButton("Start screen capture");
+        capture.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { requestScreenCapture(); }
+        });
+        panel.addView(capture, new LinearLayout.LayoutParams(-1, dp(44)));
+
+        Button analyze = smallButton("Analyze now");
+        analyze.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                setStatus("Analyzing recent batches...");
+                new Thread(new Runnable() {
+                    @Override public void run() {
+                        new AnalysisEngine(MainActivity.this).processNow();
+                        runOnUiThread(new Runnable() { @Override public void run() { setStatus("Analysis complete."); refresh(); }});
+                    }
+                }, "dayflow-analysis-now").start();
+            }
+        });
+        panel.addView(analyze, new LinearLayout.LayoutParams(-1, dp(42)));
+    }
+
+    private void renderSettingsStorage(LinearLayout panel) {
+        panel.addView(text("Recording status", 13, Colors.MUTED, true));
+        panel.addView(text((appReader.hasUsageAccess() ? "Usage access: granted" : "Usage access: missing") + "\nRecorder: " + (prefs.isPaused() ? prefs.pauseLabel() : "Ready"), 14, Colors.TEXT, false));
+
+        panel.addView(text("Disk usage", 13, Colors.MUTED, true));
+        StorageStats stats = db.storageStats();
+        panel.addView(text(stats.screenshotCount + " screenshots · " + bytes(stats.screenshotBytes) + "\n" +
+                stats.timelapseCount + " timelapses · " + bytes(stats.timelapseBytes) + "\n" +
+                stats.cardCount + " cards · " + stats.batchCount + " batches", 14, Colors.TEXT, false));
+        final EditText retention = field("Screenshot retention days", String.valueOf(prefs.retentionDays()), true);
+        retention.setInputType(InputType.TYPE_CLASS_NUMBER);
+        panel.addView(retention, new LinearLayout.LayoutParams(-1, dp(54)));
+        final Switch saveTimelapses = new Switch(this);
+        saveTimelapses.setText("Save all timelapses to disk");
+        saveTimelapses.setTextColor(Colors.TEXT);
+        saveTimelapses.setTextSize(13);
+        saveTimelapses.setTypeface(DayflowType.sans(this));
+        saveTimelapses.setChecked(prefs.saveAllTimelapsesToDisk());
+        panel.addView(saveTimelapses);
+        final EditText timelapseLimit = field("Timelapse storage limit MB", String.valueOf(prefs.timelapseLimitMb()), true);
+        timelapseLimit.setInputType(InputType.TYPE_CLASS_NUMBER);
+        panel.addView(timelapseLimit, new LinearLayout.LayoutParams(-1, dp(54)));
+
+        Button purge = pillButton("Save limits and purge old files");
+        purge.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                int days = parseInt(retention.getText().toString(), prefs.retentionDays());
+                prefs.setRetentionDays(days);
+                prefs.setSaveAllTimelapsesToDisk(saveTimelapses.isChecked());
+                prefs.setTimelapseLimitMb(parseInt(timelapseLimit.getText().toString(), prefs.timelapseLimitMb()));
+                int count = db.purgeScreenshotsOlderThan(System.currentTimeMillis() - days * TimeUtil.DAY);
+                int videos = TimelapseGenerator.purgeToLimit(MainActivity.this, prefs.timelapseLimitBytes());
+                setStatus("Purged " + count + " screenshots and " + videos + " timelapses.");
+                refresh();
+            }
+        });
+        panel.addView(purge, new LinearLayout.LayoutParams(-1, dp(44)));
+
+        Button deleteTimelapses = smallButton("Delete generated timelapses");
+        deleteTimelapses.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                new AlertDialog.Builder(MainActivity.this)
+                        .setTitle("Delete saved timelapses?")
+                        .setMessage("Timeline card text and screenshots stay intact. Videos can be generated again from saved screenshots.")
+                        .setPositiveButton("Delete", new DialogInterface.OnClickListener() {
+                            @Override public void onClick(DialogInterface dialog, int which) {
+                                int count = TimelapseGenerator.deleteAll(MainActivity.this);
+                                setStatus("Deleted " + count + " timelapses.");
+                                refresh();
+                            }
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .show();
+            }
+        });
+        panel.addView(deleteTimelapses, new LinearLayout.LayoutParams(-1, dp(44)));
+    }
+
+    private void renderSettingsPrivacy(LinearLayout panel) {
+        panel.addView(text("Recording privacy", 13, Colors.MUTED, true));
+        panel.addView(text("Choose apps Dayflow should hide from screenshots. Blocked apps save a private placeholder so timeline continuity is preserved.", 14, Colors.TEXT, false));
+        ForegroundAppReader.AppSnapshot current = appReader.currentApp();
+        if (current.packageName != null) panel.addView(blockedSwitch(current));
+        for (ForegroundAppReader.AppSnapshot app : db.recentApps()) {
+            if (current.packageName != null && current.packageName.equals(app.packageName)) continue;
+            panel.addView(blockedSwitch(app));
+        }
+        panel.addView(text(db.blockedAppCount() + " apps blocked", 12, Colors.MUTED, false));
+        Button clear = smallButton("Clear blocked apps");
+        clear.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                db.clearBlockedApps();
+                setStatus("Privacy blocklist cleared.");
+                refresh();
+            }
+        });
+        panel.addView(clear, new LinearLayout.LayoutParams(-1, dp(42)));
+
+        panel.addView(text("Recording cadence", 13, Colors.MUTED, true));
+        final EditText screenshotInterval = field("Screenshot interval seconds", String.valueOf(prefs.screenshotIntervalMs() / TimeUtil.SECOND), true);
+        final EditText batchMinutes = field("Batch target minutes", String.valueOf(prefs.targetBatchMs() / TimeUtil.MINUTE), true);
+        final EditText maxGapMinutes = field("Max gap minutes", String.valueOf(prefs.maxGapMs() / TimeUtil.MINUTE), true);
+        final EditText lookbackMinutes = field("Card lookback minutes", String.valueOf(prefs.cardLookbackMs() / TimeUtil.MINUTE), true);
+        screenshotInterval.setInputType(InputType.TYPE_CLASS_NUMBER);
+        batchMinutes.setInputType(InputType.TYPE_CLASS_NUMBER);
+        maxGapMinutes.setInputType(InputType.TYPE_CLASS_NUMBER);
+        lookbackMinutes.setInputType(InputType.TYPE_CLASS_NUMBER);
+        panel.addView(screenshotInterval, new LinearLayout.LayoutParams(-1, dp(54)));
+        panel.addView(batchMinutes, new LinearLayout.LayoutParams(-1, dp(54)));
+        panel.addView(maxGapMinutes, new LinearLayout.LayoutParams(-1, dp(54)));
+        panel.addView(lookbackMinutes, new LinearLayout.LayoutParams(-1, dp(54)));
+        Button save = pillButton("Save recording cadence");
+        save.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.setScreenshotIntervalMs(parseInt(screenshotInterval.getText().toString(), (int) (prefs.screenshotIntervalMs() / TimeUtil.SECOND)) * TimeUtil.SECOND);
+                prefs.setTargetBatchMs(parseInt(batchMinutes.getText().toString(), (int) (prefs.targetBatchMs() / TimeUtil.MINUTE)) * TimeUtil.MINUTE);
+                prefs.setMaxGapMs(parseInt(maxGapMinutes.getText().toString(), (int) (prefs.maxGapMs() / TimeUtil.MINUTE)) * TimeUtil.MINUTE);
+                prefs.setCardLookbackMs(parseInt(lookbackMinutes.getText().toString(), (int) (prefs.cardLookbackMs() / TimeUtil.MINUTE)) * TimeUtil.MINUTE);
+                setStatus("Recording cadence saved.");
+                refresh();
+            }
+        });
+        panel.addView(save, new LinearLayout.LayoutParams(-1, dp(44)));
+    }
+
+    private void renderSettingsProviders(LinearLayout panel) {
+        panel.addView(text("Providers", 13, Colors.MUTED, true));
+        panel.addView(text("Primary: " + prefs.provider() + "\nBackup: " + prefs.backupProvider(), 14, Colors.TEXT, false));
+        final EditText provider = field("Provider: Heuristic, Gemini, or Ollama", prefs.provider(), true);
+        final EditText backupProvider = field("Backup provider", prefs.backupProvider(), true);
+        final EditText apiKey = field("Gemini API key", prefs.geminiApiKey(), true);
+        final EditText model = field("Gemini model", prefs.geminiModel(), true);
+        final EditText ollama = field("Ollama endpoint", prefs.ollamaEndpoint(), true);
+        final EditText ollamaModel = field("Ollama vision model", prefs.ollamaModel(), true);
+        panel.addView(provider, new LinearLayout.LayoutParams(-1, dp(54)));
+        panel.addView(backupProvider, new LinearLayout.LayoutParams(-1, dp(54)));
+        panel.addView(apiKey, new LinearLayout.LayoutParams(-1, dp(56)));
+        panel.addView(model, new LinearLayout.LayoutParams(-1, dp(56)));
+        panel.addView(ollama, new LinearLayout.LayoutParams(-1, dp(56)));
+        panel.addView(ollamaModel, new LinearLayout.LayoutParams(-1, dp(56)));
+
+        LinearLayout quick = row();
+        Button heuristic = smallButton("Heuristic");
+        heuristic.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { provider.setText("Heuristic"); }
+        });
+        Button gemini = smallButton("Gemini");
+        gemini.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { provider.setText("Gemini"); }
+        });
+        Button local = smallButton("Ollama");
+        local.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { provider.setText("Ollama"); }
+        });
+        quick.addView(heuristic, new LinearLayout.LayoutParams(0, dp(40), 1));
+        quick.addView(gemini, new LinearLayout.LayoutParams(0, dp(40), 1));
+        quick.addView(local, new LinearLayout.LayoutParams(0, dp(40), 1));
+        panel.addView(quick);
+
+        Button save = pillButton("Save provider settings");
+        save.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.setProvider(provider.getText().toString());
+                prefs.setBackupProvider(backupProvider.getText().toString());
+                prefs.setGeminiApiKey(apiKey.getText().toString());
+                prefs.setGeminiModel(model.getText().toString());
+                prefs.setOllamaEndpoint(ollama.getText().toString());
+                prefs.setOllamaModel(ollamaModel.getText().toString());
+                setStatus("Provider settings saved.");
+                refresh();
+            }
+        });
+        panel.addView(save, new LinearLayout.LayoutParams(-1, dp(44)));
+    }
+
+    private void renderSettingsData(LinearLayout panel) {
+        addDataExportSettings(panel);
+        Button deleteDay = smallButton("Delete selected day cards");
+        deleteDay.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                new AlertDialog.Builder(MainActivity.this)
+                        .setTitle("Delete " + selectedDay + "?")
+                        .setMessage("Timeline cards for this day will be hidden. Raw screenshots follow the retention setting.")
+                        .setPositiveButton("Delete", new DialogInterface.OnClickListener() {
+                            @Override public void onClick(DialogInterface dialog, int which) {
+                                db.deleteTimelineDay(selectedDay);
+                                setStatus("Day deleted.");
+                                refresh();
+                            }
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .show();
+            }
+        });
+        panel.addView(deleteDay, new LinearLayout.LayoutParams(-1, dp(44)));
+    }
+
+    private void renderSettingsOther(LinearLayout panel) {
+        panel.addView(text("App preferences", 13, Colors.MUTED, true));
+        final Switch analytics = new Switch(this);
+        analytics.setText("Share crash reports and anonymous usage data");
+        analytics.setTextColor(Colors.TEXT);
+        analytics.setTypeface(DayflowType.sans(this));
+        analytics.setChecked(prefs.analyticsEnabled());
+        panel.addView(analytics);
+        final Switch icons = new Switch(this);
+        icons.setText("Show app/website icons in timeline");
+        icons.setTextColor(Colors.TEXT);
+        icons.setTypeface(DayflowType.sans(this));
+        icons.setChecked(prefs.showTimelineAppIcons());
+        panel.addView(icons);
+        final Switch dailyPopups = new Switch(this);
+        dailyPopups.setText("Show daily goal popups");
+        dailyPopups.setTextColor(Colors.TEXT);
+        dailyPopups.setTypeface(DayflowType.sans(this));
+        dailyPopups.setChecked(prefs.showDailyGoalPopups());
+        panel.addView(dailyPopups);
+
+        final EditText language = field("Output language override", prefs.outputLanguageOverride(), true);
+        panel.addView(language, new LinearLayout.LayoutParams(-1, dp(54)));
+
+        Button save = pillButton("Save app preferences");
+        save.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.setAnalyticsEnabled(analytics.isChecked());
+                prefs.setShowTimelineAppIcons(icons.isChecked());
+                prefs.setShowDailyGoalPopups(dailyPopups.isChecked());
+                prefs.setOutputLanguageOverride(language.getText().toString());
+                setStatus("App preferences saved.");
+                refresh();
+            }
+        });
+        panel.addView(save, new LinearLayout.LayoutParams(-1, dp(44)));
+
+        addJournalReminderSettings(panel);
+        panel.addView(text("Pause recording", 13, Colors.MUTED, true));
+        panel.addView(text(prefs.pauseLabel(), 14, Colors.TEXT, false));
+        LinearLayout pauseShort = row();
+        Button pause15 = smallButton("15m");
+        pause15.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { pauseRecording(15 * TimeUtil.MINUTE); }
+        });
+        Button pause30 = smallButton("30m");
+        pause30.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { pauseRecording(30 * TimeUtil.MINUTE); }
+        });
+        Button pause60 = smallButton("1h");
+        pause60.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { pauseRecording(TimeUtil.HOUR); }
+        });
+        pauseShort.addView(pause15, new LinearLayout.LayoutParams(0, dp(40), 1));
+        pauseShort.addView(pause30, new LinearLayout.LayoutParams(0, dp(40), 1));
+        pauseShort.addView(pause60, new LinearLayout.LayoutParams(0, dp(40), 1));
+        panel.addView(pauseShort);
+        Button resume = pillButton("Resume recording");
+        resume.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.resumeRecording();
+                setStatus("Recording resumed.");
+                refresh();
+            }
+        });
+        panel.addView(resume, new LinearLayout.LayoutParams(-1, dp(44)));
     }
 
     private void addDataExportSettings(LinearLayout panel) {
@@ -2007,6 +2362,14 @@ public final class MainActivity extends Activity {
         if (value >= 1024L * 1024L) return String.format(Locale.US, "%.1f MB", value / (1024f * 1024f));
         if (value >= 1024L) return String.format(Locale.US, "%.1f KB", value / 1024f);
         return value + " B";
+    }
+
+    private String appVersionLabel() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception ignored) {
+            return "0.1.0";
+        }
     }
 
     private static int parseColor(String value, int fallback) {
