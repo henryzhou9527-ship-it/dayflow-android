@@ -44,6 +44,10 @@ final class DayflowPrefs {
         return prefs.getString("provider", useCloudAnalyzer() ? "Gemini" : "Heuristic");
     }
 
+    String backupProvider() {
+        return prefs.getString("backup_provider", "Heuristic");
+    }
+
     String ollamaEndpoint() {
         return prefs.getString("ollama_endpoint", "http://127.0.0.1:11434");
     }
@@ -92,6 +96,11 @@ final class DayflowPrefs {
                 .putString("provider", value)
                 .putBoolean("use_cloud_analyzer", "Gemini".equalsIgnoreCase(value))
                 .apply();
+    }
+
+    void setBackupProvider(String provider) {
+        String value = provider == null || provider.trim().isEmpty() ? "Heuristic" : provider.trim();
+        prefs.edit().putString("backup_provider", value).apply();
     }
 
     void setOllamaEndpoint(String endpoint) {

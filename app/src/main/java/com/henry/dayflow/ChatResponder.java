@@ -26,15 +26,28 @@ final class ChatResponder {
 
     String answer(String day, String question) {
         String prompt = promptFor(day, question);
-        String provider = prefs.provider().toLowerCase(Locale.US);
+        String answer = tryProvider(prefs.provider(), prompt);
+        if (answer != null && !answer.trim().isEmpty()) return answer;
+
+        if (!sameProvider(prefs.provider(), prefs.backupProvider())) {
+            answer = tryProvider(prefs.backupProvider(), prompt);
+            if (answer != null && !answer.trim().isEmpty()) return answer;
+        }
+
+        return fallback(day, question);
+    }
+
+    private String tryProvider(String providerName, String prompt) {
+        String provider = providerName == null ? "" : providerName.toLowerCase(Locale.US);
         try {
             if (provider.contains("ollama")) return ollama(prompt);
-            if ((provider.contains("gemini") || prefs.useCloudAnalyzer()) && !prefs.geminiApiKey().trim().isEmpty()) {
+            if (provider.contains("gemini") || (provider.trim().isEmpty() && prefs.useCloudAnalyzer())) {
+                if (prefs.geminiApiKey().trim().isEmpty()) return null;
                 return gemini(prompt);
             }
         } catch (Exception ignored) {
         }
-        return fallback(day, question);
+        return null;
     }
 
     private String promptFor(String day, String question) {
@@ -162,5 +175,11 @@ final class ChatResponder {
 
     private static String blank(String value) {
         return value == null || value.trim().isEmpty() ? "-" : value.trim();
+    }
+
+    private static boolean sameProvider(String a, String b) {
+        String left = a == null ? "" : a.trim().toLowerCase(Locale.US);
+        String right = b == null ? "" : b.trim().toLowerCase(Locale.US);
+        return left.equals(right);
     }
 }

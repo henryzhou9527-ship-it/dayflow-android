@@ -570,6 +570,9 @@ public final class MainActivity extends Activity {
         final EditText provider = field("Provider: Heuristic, Gemini, or Ollama", prefs.provider(), true);
         panel.addView(provider, new LinearLayout.LayoutParams(-1, dp(54)));
 
+        final EditText backupProvider = field("Backup provider", prefs.backupProvider(), true);
+        panel.addView(backupProvider, new LinearLayout.LayoutParams(-1, dp(54)));
+
         final Switch cloud = new Switch(this);
         cloud.setText("Use Gemini vision when API key is set");
         cloud.setTextColor(Colors.TEXT);
@@ -613,6 +616,7 @@ public final class MainActivity extends Activity {
         save.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
                 prefs.setProvider(provider.getText().toString());
+                prefs.setBackupProvider(backupProvider.getText().toString());
                 prefs.setGeminiApiKey(apiKey.getText().toString());
                 prefs.setGeminiModel(model.getText().toString());
                 prefs.setOllamaEndpoint(ollama.getText().toString());

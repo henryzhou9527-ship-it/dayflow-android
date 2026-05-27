@@ -39,22 +39,45 @@ final class HybridActivityAnalyzer implements ActivityAnalyzer {
 
     @Override
     public List<TimelineCard> analyze(long batchId, List<ScreenshotRecord> screenshots, List<TimelineCard> existingCards) throws Exception {
-        String provider = prefs.provider().toLowerCase(Locale.US);
-        if (provider.contains("ollama")) {
+        Exception firstError = null;
+        try {
+            return analyzeWithProvider(prefs.provider(), batchId, screenshots, existingCards);
+        } catch (Exception error) {
+            firstError = error;
+        }
+
+        String backup = prefs.backupProvider();
+        if (!sameProvider(prefs.provider(), backup)) {
             try {
-                return ollama.analyze(batchId, screenshots, existingCards);
+                return analyzeWithProvider(backup, batchId, screenshots, existingCards);
             } catch (Exception ignored) {
-                return heuristic.analyze(batchId, screenshots, existingCards);
             }
         }
-        if ((provider.contains("gemini") || prefs.useCloudAnalyzer()) && !prefs.geminiApiKey().trim().isEmpty()) {
-            try {
-                return gemini.analyze(batchId, screenshots, existingCards);
-            } catch (Exception ignored) {
-                return heuristic.analyze(batchId, screenshots, existingCards);
+
+        if (firstError != null) {
+            List<TimelineCard> cards = heuristic.analyze(batchId, screenshots, existingCards);
+            for (TimelineCard card : cards) {
+                card.metadata = (card.metadata == null ? "" : card.metadata) + "primary_error=" + firstError.getClass().getSimpleName() + ";";
             }
+            return cards;
         }
         return heuristic.analyze(batchId, screenshots, existingCards);
+    }
+
+    private List<TimelineCard> analyzeWithProvider(String providerName, long batchId, List<ScreenshotRecord> screenshots, List<TimelineCard> existingCards) throws Exception {
+        String provider = providerName == null ? "" : providerName.toLowerCase(Locale.US);
+        if (provider.contains("ollama")) return ollama.analyze(batchId, screenshots, existingCards);
+        if (provider.contains("gemini") || (provider.trim().isEmpty() && prefs.useCloudAnalyzer())) {
+            if (prefs.geminiApiKey().trim().isEmpty()) throw new IllegalStateException("Gemini API key missing");
+            return gemini.analyze(batchId, screenshots, existingCards);
+        }
+        return heuristic.analyze(batchId, screenshots, existingCards);
+    }
+
+    private static boolean sameProvider(String a, String b) {
+        String left = a == null ? "" : a.trim().toLowerCase(Locale.US);
+        String right = b == null ? "" : b.trim().toLowerCase(Locale.US);
+        return left.equals(right);
     }
 }
 
