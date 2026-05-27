@@ -252,7 +252,8 @@ public final class MainActivity extends Activity {
         panel.addView(logo, new LinearLayout.LayoutParams(dp(72), dp(72)));
         panel.addView(serif("Your day, written automatically", 34, Colors.TEXT));
         panel.addView(text("Dayflow turns private screen snapshots into a calm timeline, daily journal, review surface, and chat memory. Everything starts local; you choose whether Gemini or Ollama helps read the screenshots.", 14, Colors.TEXT, false));
-        addAssetImage(panel, "images/dayflow_content_area.png", 220);
+        addOnboardingPreview(panel, "images/onboarding/timeline.png", "Timeline builds itself", "15-minute batches become readable cards with summaries, categories, and screenshots.");
+        addHowItWorksCards(panel);
         Button start = pillButton("Start setup");
         start.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) { goOnboarding(1); }
@@ -264,7 +265,8 @@ public final class MainActivity extends Activity {
     private void renderOnboardingRole() {
         LinearLayout panel = panel();
         panel.addView(serif("What should Dayflow optimize for?", 28, Colors.TEXT));
-        panel.addView(text("The original Dayflow onboarding uses role selection before categories. This saves the same preference locally so the Android setup can stay personal.", 14, Colors.MUTED, false));
+        panel.addView(text("Pick the lens Dayflow should use when it names work, highlights focus, and writes your daily summaries.", 14, Colors.MUTED, false));
+        panel.addView(onboardingInfoCard("images/onboarding/understanding.png", "Understand your day", "The same screen history can mean deep work, class, design review, or research depending on what you care about."));
         String[] roles = new String[]{"Builder", "Founder", "Student", "Designer", "Researcher"};
         for (String role : roles) {
             final String value = role;
@@ -285,6 +287,7 @@ public final class MainActivity extends Activity {
         LinearLayout panel = panel();
         panel.addView(serif("A quick preference check", 28, Colors.TEXT));
         panel.addView(text("Dayflow asks how you found it and how you want analysis to run before recommending a provider.", 14, Colors.MUTED, false));
+        panel.addView(onboardingInfoCard("images/onboarding/security.png", "Local-first setup", "You can keep analysis offline with the built-in heuristic or Ollama, then add Gemini later when you want richer visual reading."));
 
         final EditText referral = field("How did you hear about Dayflow?", prefs.onboardingReferral(), false);
         panel.addView(referral, new LinearLayout.LayoutParams(-1, dp(92)));
@@ -321,6 +324,7 @@ public final class MainActivity extends Activity {
         panel.addView(serif("Choose the analysis engine", 28, Colors.TEXT));
         panel.addView(text("Heuristic mode works offline from app metadata. Gemini and Ollama can inspect screenshots for richer card titles, summaries, and chat answers.", 14, Colors.MUTED, false));
         panel.addView(text("Current provider: " + prefs.provider() + " · Backup: " + prefs.backupProvider(), 13, Colors.TEXT, false));
+        panel.addView(onboardingInfoCard("images/onboarding/how.png", "Install and forget", "Once permissions are enabled, Dayflow keeps gathering private local context in the background while you use Android normally."));
         panel.addView(providerChoiceButton("Local heuristic only", "Heuristic", 5), new LinearLayout.LayoutParams(-1, dp(44)));
         panel.addView(providerChoiceButton("Google Gemini vision", "Gemini", 4), new LinearLayout.LayoutParams(-1, dp(44)));
         panel.addView(providerChoiceButton("Ollama local vision", "Ollama", 4), new LinearLayout.LayoutParams(-1, dp(44)));
@@ -400,7 +404,9 @@ public final class MainActivity extends Activity {
         LinearLayout panel = panel();
         panel.addView(serif("Tune your categories", 28, Colors.TEXT));
         panel.addView(text("These labels shape timeline cards, reviews, charts, and chat context. The category editor lets you rename them or change colors just like Dayflow's onboarding color step.", 14, Colors.MUTED, false));
-        for (Category category : db.fetchCategories()) {
+        List<Category> categories = db.fetchCategories();
+        panel.addView(categoryPillStrip(categories));
+        for (Category category : categories) {
             LinearLayout item = row();
             TextView swatch = new TextView(this);
             GradientDrawable bg = new GradientDrawable();
@@ -442,6 +448,7 @@ public final class MainActivity extends Activity {
         LinearLayout panel = panel();
         panel.addView(serif("Enable the two Android permissions", 28, Colors.TEXT));
         panel.addView(text("Usage Access tells Dayflow which app is in front. Screen capture is the Android MediaProjection consent prompt that lets Dayflow save private local frames.", 14, Colors.MUTED, false));
+        panel.addView(onboardingInfoCard("images/onboarding/security.png", "Privacy by default", "Screenshots stay on this Android device, retention controls can purge old files, and blocked apps are redacted before storage."));
         panel.addView(text(appReader.hasUsageAccess() ? "Usage Access: enabled" : "Usage Access: not enabled yet", 14, appReader.hasUsageAccess() ? Colors.ACCENT : Colors.TEXT, false));
 
         Button usage = pillButton(appReader.hasUsageAccess() ? "Open Usage Access settings" : "Enable Usage Access");
@@ -475,6 +482,8 @@ public final class MainActivity extends Activity {
         LinearLayout panel = panel();
         panel.addView(serif("Dayflow is ready", 32, Colors.TEXT));
         panel.addView(text("Leave recording on and return after one full 15-minute batch. Your timeline, daily summary, review frames, journal, and chat context will all grow from the same local history.", 14, Colors.TEXT, false));
+        addOnboardingPreview(panel, "images/onboarding/journal.png", "Journal from the same day", "Intentions, notes, reflections, and generated summaries stay tied to the timeline.");
+        addOnboardingPreview(panel, "images/onboarding/weekly_calendar.jpg", "Weekly patterns", "Heatmaps, context shifts, app flows, and review data roll up after enough history is captured.");
         panel.addView(text("Role: " + prefs.onboardingRole() + "\nProvider: " + prefs.provider() + "\nBackup: " + prefs.backupProvider(), 14, Colors.MUTED, false));
         Button finish = pillButton("Enter Dayflow");
         finish.setOnClickListener(new View.OnClickListener() {
@@ -2732,6 +2741,79 @@ public final class MainActivity extends Activity {
             lp.setMargins(0, dp(12), 0, dp(12));
             panel.addView(image, lp);
         } catch (IOException ignored) {
+        }
+    }
+
+    private void addHowItWorksCards(LinearLayout panel) {
+        panel.addView(onboardingInfoCard("images/onboarding/how.png", "Install and forget", "Dayflow takes periodic Android screen captures and keeps them private on this device. Recording can be paused whenever you need."));
+        panel.addView(onboardingInfoCard("images/onboarding/security.png", "Privacy by default", "Local heuristic and Ollama modes can run without sending screenshots to a cloud provider. Retention and blocked apps stay under your control."));
+        panel.addView(onboardingInfoCard("images/onboarding/understanding.png", "Understand your day", "It separates focused work from drift, then turns the same history into timeline cards, reviews, daily notes, weekly charts, and chat context."));
+    }
+
+    private LinearLayout onboardingInfoCard(String assetPath, String title, String body) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.TOP);
+        card.setPadding(dp(14), dp(14), dp(14), dp(14));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.argb(92, 255, 255, 255));
+        bg.setStroke(1, Color.argb(28, 0, 0, 0));
+        bg.setCornerRadius(dp(6));
+        card.setBackground(bg);
+
+        ImageView icon = assetImage(assetPath);
+        if (icon != null) {
+            icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            card.addView(icon, new LinearLayout.LayoutParams(dp(42), dp(42)));
+        }
+
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        copy.setPadding(dp(12), 0, 0, 0);
+        copy.addView(text(title, 16, Colors.TEXT, false));
+        copy.addView(text(body, 13, Colors.MUTED, false));
+        card.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(10), 0, 0);
+        card.setLayoutParams(lp);
+        return card;
+    }
+
+    private void addOnboardingPreview(LinearLayout panel, String assetPath, String title, String body) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(12), dp(12), dp(12), dp(12));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.argb(150, 255, 255, 255));
+        bg.setStroke(1, Color.argb(42, 0, 0, 0));
+        bg.setCornerRadius(dp(10));
+        card.setBackground(bg);
+
+        ImageView image = assetImage(assetPath);
+        if (image != null) {
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            image.setAdjustViewBounds(false);
+            card.addView(image, new LinearLayout.LayoutParams(-1, dp(155)));
+        }
+        card.addView(serif(title, 22, Colors.ACCENT));
+        card.addView(text(body, 13, Colors.MUTED, false));
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(12), 0, dp(4));
+        panel.addView(card, lp);
+    }
+
+    private ImageView assetImage(String assetPath) {
+        try (InputStream stream = getAssets().open(assetPath)) {
+            Bitmap bitmap = BitmapFactory.decodeStream(stream);
+            if (bitmap == null) return null;
+            ImageView image = new ImageView(this);
+            image.setImageBitmap(bitmap);
+            image.setContentDescription(assetPath);
+            return image;
+        } catch (IOException ignored) {
+            return null;
         }
     }
 
