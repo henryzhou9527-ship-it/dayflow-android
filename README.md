@@ -1,6 +1,6 @@
 # Dayflow Android
 
-An Android-native Dayflow prototype: private screen journal, local-first storage, automatic 15-minute activity batches, Dayflow-inspired timeline/daily/weekly/journal/review/chat views, editable categories, privacy blocking, retention controls, and optional Gemini vision analysis.
+An Android-native Dayflow prototype: private screen journal, local-first storage, automatic 15-minute activity batches, Dayflow-inspired timeline/daily/weekly/journal/review/chat views, editable categories, privacy blocking, retention controls, and configurable AI provider analysis.
 
 ## What It Does
 
@@ -10,11 +10,11 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Can optionally use an Android AccessibilityService as a local-only second signal for window titles and short visible-text snippets, improving analysis without sign-in.
 - Tracks recording health locally, including service heartbeat, last successful frame, capture errors, active resolution, and restart prompts when the recorder needs attention.
 - Builds 15-minute analysis batches and rewrites cards with a 45-minute lookback window.
-- Supports heuristic analysis, Gemini vision analysis, and Ollama local vision models such as `qwen3-vl:4b`.
-- Chat uses saved timeline cards, journal notes, category totals, and recent chat history, then answers through Gemini or Ollama when configured.
+- Supports Custom API endpoints with OpenAI-compatible chat completions, Gemini vision analysis, heuristic fallback, and Ollama vision models such as `qwen3-vl:4b`.
+- Chat uses saved timeline cards, journal notes, category totals, and recent chat history, then answers through Custom API, Gemini, or Ollama when configured.
 - Chat renders Dayflow-style user/assistant bubbles, context chips, suggested prompts, markdown blocks, code blocks, copy actions, and lightweight feedback controls.
 - Provider settings include a backup provider so timeline analysis and chat can retry through another route before falling back locally.
-- Provider setup includes Android-native connection tests for Gemini and Ollama so the selected engine can be checked during onboarding or later in Settings.
+- Provider setup includes Android-native connection tests for Custom API, Gemini, and Ollama so the selected engine can be checked during onboarding or later in Settings.
 - Local diagnostics record provider attempts, fallback paths, batch decisions, errors, latency, and recent timeline state, with a copyable report in Settings and a dismissible in-app notice when analysis needs attention.
 - Settings are organized into Dayflow-like Profile, Storage, Privacy, Providers, Export, and Other sections.
 - Other settings include app preference toggles and an output-language override that is passed into timeline analysis and chat prompts.
@@ -27,7 +27,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Timeline week mode renders a seven-day 4 AM-to-4 AM grid with tappable activity cards and day columns, giving the original week timeline behavior an Android-native inspector flow.
 - Timeline and review cards can generate, save, regenerate, and play MP4 timelapse summaries from the card's captured screenshots.
 - Daily view surfaces day-goal progress, focus summaries, distraction summaries, an original-style touch workflow grid with dynamic time windows, totals, stats, distraction markers, and editable Dayflow-style standup cards for highlights, tasks, and blockers.
-- Daily standups are stored by day and can be saved or regenerated through the selected Gemini/Ollama provider with local fallback.
+- Daily standups are stored by day and can be saved or regenerated through the selected provider with fallback.
 - Journal reminders can schedule recurring intention and reflection notifications on selected weekdays, with boot-time rescheduling.
 - Daily and Weekly ready notifications mirror Dayflow's return-to-review flow, opening directly into the relevant Android tab when enough analyzed history exists.
 - Journal uses an original-style two-page board for intentions, notes, long-term goals, reflections, and Dayflow-generated daily summaries.
@@ -82,10 +82,10 @@ ANDROID_HOME=/Users/henry/.cache/dayflow-build/android-sdk \
 3. Enable Usage Access when prompted so foreground app labels are available.
 4. Approve the Android screen-capture prompt.
 5. Dayflow creates an `Installed Dayflow!` sample card immediately, then real timeline cards appear after a complete 15-minute batch.
-6. Optional: add a Gemini API key or Ollama endpoint during setup, or rerun setup later from `Settings`.
+6. Add a Custom API endpoint/model/key during setup, or choose another provider/fallback and rerun setup later from `Settings`.
 
 ## Current Limits
 
 - Android requires a fresh user-approved MediaProjection session; recording cannot silently resume after reboot.
-- The default analyzer is metadata-based. Gemini vision can inspect sampled screenshots when configured.
+- The default analyzer is metadata-based. Custom API and Gemini vision can inspect sampled screenshots when configured.
 - No physical device was connected in this workspace, so verification covered build and lint, not live capture.

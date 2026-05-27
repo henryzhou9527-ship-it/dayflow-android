@@ -66,6 +66,7 @@ final class ChatResponder {
     private String tryProvider(String providerName, String prompt) {
         String provider = providerName == null ? "" : providerName.toLowerCase(Locale.US);
         try {
+            if (isCustomProvider(provider)) return customApi(prompt);
             if (provider.contains("ollama")) return ollama(prompt);
             if (provider.contains("gemini") || (provider.trim().isEmpty() && prefs.useCloudAnalyzer())) {
                 if (prefs.geminiApiKey().trim().isEmpty()) return null;
@@ -160,6 +161,16 @@ final class ChatResponder {
         endpoint = endpoint.endsWith("/") ? endpoint.substring(0, endpoint.length() - 1) : endpoint;
         String response = postJson(endpoint + "/api/generate", body.toString(), 120_000);
         return new JSONObject(response).optString("response", "").trim();
+    }
+
+    private String customApi(String prompt) throws Exception {
+        JSONObject body = OpenAiCompatibleClient.textBody(prefs.customApiModel(), prompt, 0.35);
+        String response = OpenAiCompatibleClient.postChatCompletion(
+                prefs.customApiEndpoint(),
+                prefs.customApiKey(),
+                body,
+                120_000);
+        return OpenAiCompatibleClient.extractText(response);
     }
 
     private String fallback(String day, String question) {
@@ -274,5 +285,10 @@ final class ChatResponder {
         String left = a == null ? "" : a.trim().toLowerCase(Locale.US);
         String right = b == null ? "" : b.trim().toLowerCase(Locale.US);
         return left.equals(right);
+    }
+
+    private static boolean isCustomProvider(String provider) {
+        String value = provider == null ? "" : provider.toLowerCase(Locale.US);
+        return value.contains("custom") || value.contains("openai") || value.contains("compatible");
     }
 }

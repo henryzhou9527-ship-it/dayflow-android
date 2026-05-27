@@ -65,6 +65,7 @@ public final class MainActivity extends Activity {
     private static final int REQ_NOTIFICATIONS = 1002;
     private static final int REQ_EXPORT_MARKDOWN = 1003;
     private static final int DAILY_REQUIRED_BATCHES = 20;
+    private static final int WEEKLY_REQUIRED_BATCHES = 120;
     private static final String[] CATEGORY_COLOR_PRESETS = {
             "#B984FF", "#6AADFF", "#FFAE8C", "#FF5950", "#42D0BB", "#F96E00", "#90DDF0", "#A0AEC0"
     };
@@ -368,7 +369,7 @@ public final class MainActivity extends Activity {
         DayflowLogoView logo = new DayflowLogoView(this);
         panel.addView(logo, new LinearLayout.LayoutParams(dp(72), dp(72)));
         panel.addView(serif("Your day, written automatically", 34, Colors.TEXT));
-        panel.addView(text("Dayflow turns private screen snapshots into a calm timeline, daily journal, review surface, and chat memory. Everything starts local; you choose whether Gemini or Ollama helps read the screenshots.", 14, Colors.TEXT, false));
+        panel.addView(text("Dayflow turns private screen snapshots into a calm timeline, daily journal, review surface, and chat memory. Use a Custom API endpoint, Gemini, Ollama, or the built-in fallback to read screenshots.", 14, Colors.TEXT, false));
         addOnboardingPreview(panel, "images/onboarding/timeline.png", "Timeline builds itself", "15-minute batches become readable cards with summaries, categories, and screenshots.");
         addHowItWorksCards(panel);
         Button start = pillButton("Start setup");
@@ -404,13 +405,13 @@ public final class MainActivity extends Activity {
         LinearLayout panel = panel();
         panel.addView(serif("A quick preference check", 28, Colors.TEXT));
         panel.addView(text("Dayflow asks how you found it and how you want analysis to run before recommending a provider.", 14, Colors.MUTED, false));
-        panel.addView(onboardingInfoCard("images/onboarding/security.png", "Local-first setup", "You can keep analysis offline with the built-in heuristic or Ollama, then add Gemini later when you want richer visual reading."));
+        panel.addView(onboardingInfoCard("images/onboarding/security.png", "Bring your own endpoint", "Custom API is the main route for richer visual reading. The local fallback stays available when a provider is not reachable."));
 
         final EditText referral = field("How did you hear about Dayflow?", prefs.onboardingReferral(), false);
         panel.addView(referral, new LinearLayout.LayoutParams(-1, dp(92)));
 
         final Switch localFirst = new Switch(this);
-        localFirst.setText("Prefer local/offline analysis first");
+        localFirst.setText("Start with fallback until API is set");
         localFirst.setTextColor(Colors.TEXT);
         localFirst.setTextSize(13);
         localFirst.setTypeface(DayflowType.sans(this));
@@ -439,9 +440,10 @@ public final class MainActivity extends Activity {
     private void renderOnboardingProviderChoice() {
         LinearLayout panel = panel();
         panel.addView(serif("Choose the analysis engine", 28, Colors.TEXT));
-        panel.addView(text("Heuristic mode works offline from app metadata. Gemini and Ollama can inspect screenshots for richer card titles, summaries, and chat answers.", 14, Colors.MUTED, false));
+        panel.addView(text("Custom API supports OpenAI-compatible chat completion endpoints for screenshot analysis, daily writing, journal summaries, and chat answers. Gemini, Ollama, and heuristic fallback remain available.", 14, Colors.MUTED, false));
         panel.addView(text("Current provider: " + prefs.provider() + " · Backup: " + prefs.backupProvider(), 13, Colors.TEXT, false));
         panel.addView(onboardingInfoCard("images/onboarding/how.png", "Install and forget", "Once permissions are enabled, Dayflow keeps gathering private local context in the background while you use Android normally."));
+        panel.addView(providerChoiceButton("Custom API endpoint", "Custom API", 4), new LinearLayout.LayoutParams(-1, dp(44)));
         panel.addView(providerChoiceButton("Local heuristic only", "Heuristic", 5), new LinearLayout.LayoutParams(-1, dp(44)));
         panel.addView(providerChoiceButton("Google Gemini vision", "Gemini", 4), new LinearLayout.LayoutParams(-1, dp(44)));
         panel.addView(providerChoiceButton("Ollama local vision", "Ollama", 4), new LinearLayout.LayoutParams(-1, dp(44)));
@@ -452,22 +454,32 @@ public final class MainActivity extends Activity {
     private void renderOnboardingProviderSetup() {
         LinearLayout panel = panel();
         panel.addView(serif("Connect the provider", 28, Colors.TEXT));
-        panel.addView(text("Save the model details now. You can change these later in Settings, including the backup route Dayflow tries if the primary provider fails.", 14, Colors.MUTED, false));
+        panel.addView(text("Save the model details now. Custom API works with OpenAI-compatible chat completion endpoints and can power screenshot analysis, chat, Daily, and Journal.", 14, Colors.MUTED, false));
 
-        final EditText provider = field("Provider: Gemini or Ollama", prefs.provider(), true);
+        final EditText provider = field("Provider: Custom API, Gemini, Ollama, or Heuristic", prefs.provider(), true);
         final EditText backupProvider = field("Backup provider", prefs.backupProvider(), true);
+        final EditText customEndpoint = field("Custom API endpoint", prefs.customApiEndpoint(), true);
+        final EditText customKey = field("Custom API key", prefs.customApiKey(), true);
+        final EditText customModel = field("Custom API model", prefs.customApiModel(), true);
         final EditText apiKey = field("Gemini API key", prefs.geminiApiKey(), true);
         final EditText model = field("Gemini model", prefs.geminiModel(), true);
         final EditText ollama = field("Ollama endpoint", prefs.ollamaEndpoint(), true);
         final EditText ollamaModel = field("Ollama vision model", prefs.ollamaModel(), true);
         panel.addView(provider, new LinearLayout.LayoutParams(-1, dp(54)));
         panel.addView(backupProvider, new LinearLayout.LayoutParams(-1, dp(54)));
+        panel.addView(customEndpoint, new LinearLayout.LayoutParams(-1, dp(54)));
+        panel.addView(customKey, new LinearLayout.LayoutParams(-1, dp(54)));
+        panel.addView(customModel, new LinearLayout.LayoutParams(-1, dp(54)));
         panel.addView(apiKey, new LinearLayout.LayoutParams(-1, dp(54)));
         panel.addView(model, new LinearLayout.LayoutParams(-1, dp(54)));
         panel.addView(ollama, new LinearLayout.LayoutParams(-1, dp(54)));
         panel.addView(ollamaModel, new LinearLayout.LayoutParams(-1, dp(54)));
 
         LinearLayout quick = row();
+        Button custom = smallButton("Custom");
+        custom.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { provider.setText("Custom API"); }
+        });
         Button gemini = smallButton("Gemini");
         gemini.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) { provider.setText("Gemini"); }
@@ -480,6 +492,7 @@ public final class MainActivity extends Activity {
         heuristic.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) { provider.setText("Heuristic"); }
         });
+        quick.addView(custom, new LinearLayout.LayoutParams(0, dp(40), 1));
         quick.addView(gemini, new LinearLayout.LayoutParams(0, dp(40), 1));
         quick.addView(local, new LinearLayout.LayoutParams(0, dp(40), 1));
         quick.addView(heuristic, new LinearLayout.LayoutParams(0, dp(40), 1));
@@ -488,8 +501,8 @@ public final class MainActivity extends Activity {
         Button test = smallButton("Test selected provider");
         test.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                saveProviderFields(provider, backupProvider, apiKey, model, ollama, ollamaModel);
-                testSelectedProvider(provider.getText().toString(), apiKey.getText().toString(), model.getText().toString(), ollama.getText().toString(), ollamaModel.getText().toString());
+                saveProviderFields(provider, backupProvider, customEndpoint, customKey, customModel, apiKey, model, ollama, ollamaModel);
+                testSelectedProvider(provider.getText().toString(), customEndpoint.getText().toString(), customKey.getText().toString(), customModel.getText().toString(), apiKey.getText().toString(), model.getText().toString(), ollama.getText().toString(), ollamaModel.getText().toString());
             }
         });
         panel.addView(test, new LinearLayout.LayoutParams(-1, dp(42)));
@@ -502,12 +515,7 @@ public final class MainActivity extends Activity {
         Button save = pillButton("Save and continue");
         save.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                prefs.setProvider(provider.getText().toString());
-                prefs.setBackupProvider(backupProvider.getText().toString());
-                prefs.setGeminiApiKey(apiKey.getText().toString());
-                prefs.setGeminiModel(model.getText().toString());
-                prefs.setOllamaEndpoint(ollama.getText().toString());
-                prefs.setOllamaModel(ollamaModel.getText().toString());
+                saveProviderFields(provider, backupProvider, customEndpoint, customKey, customModel, apiKey, model, ollama, ollamaModel);
                 goOnboarding(5);
             }
         });
@@ -926,6 +934,14 @@ public final class MainActivity extends Activity {
                 refresh();
             }
         });
+        Button custom = smallButton("Custom");
+        custom.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.setProvider("Custom API");
+                setStatus("Daily provider set to Custom API.");
+                refresh();
+            }
+        });
         Button gemini = smallButton("Gemini");
         gemini.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
@@ -943,6 +959,7 @@ public final class MainActivity extends Activity {
             }
         });
         providerRow.addView(heuristic, new LinearLayout.LayoutParams(0, dp(40), 1));
+        providerRow.addView(custom, new LinearLayout.LayoutParams(0, dp(40), 1));
         providerRow.addView(gemini, new LinearLayout.LayoutParams(0, dp(40), 1));
         providerRow.addView(ollama, new LinearLayout.LayoutParams(0, dp(40), 1));
         panel.addView(providerRow);
@@ -1041,6 +1058,17 @@ public final class MainActivity extends Activity {
         else if (hours == 0) done = remaining + "m";
         else done = hours + "h " + remaining + "m";
         return done + " / 5h";
+    }
+
+    private String weeklyProgressText(int analyzedBatches) {
+        int minutes = Math.min(WEEKLY_REQUIRED_BATCHES, Math.max(0, analyzedBatches)) * 15;
+        int hours = minutes / 60;
+        int remaining = minutes % 60;
+        String done;
+        if (minutes == 0) done = "0h";
+        else if (remaining == 0) done = hours + "h";
+        else done = hours + "h " + remaining + "m";
+        return done + " / 30h";
     }
 
     private boolean hasNotificationPermission() {
@@ -1553,6 +1581,10 @@ public final class MainActivity extends Activity {
     }
 
     private void renderWeekly() {
+        if (db.countAnalyzedBatches() < WEEKLY_REQUIRED_BATCHES) {
+            renderWeeklyAccess();
+            return;
+        }
         long start = selectedWeekStartMs <= 0 ? TimeUtil.weekStartMs(System.currentTimeMillis()) : selectedWeekStartMs;
         long end = start + 7 * TimeUtil.DAY;
         List<TimelineCard> cards = db.fetchTimelineCardsRange(start, end);
@@ -1627,6 +1659,77 @@ public final class MainActivity extends Activity {
         addGap(14);
 
         renderWeeklyInsights(start, cards, previousCards);
+    }
+
+    private void renderWeeklyAccess() {
+        int analyzed = db.countAnalyzedBatches();
+        int capped = Math.min(WEEKLY_REQUIRED_BATCHES, Math.max(0, analyzed));
+        float progress = capped / (float) WEEKLY_REQUIRED_BATCHES;
+
+        LinearLayout panel = panel();
+        panel.setGravity(Gravity.CENTER_HORIZONTAL);
+        panel.addView(serif("Unlock Weekly", 34, Colors.TEXT));
+        panel.addView(text("Weekly unlocks after 30 hours of analyzed timeline data.", 15, Colors.TEXT, false));
+        panel.addView(text(weeklyProgressText(analyzed), 13, Colors.MUTED, false));
+        panel.addView(progressBar(Colors.ACCENT, progress), new LinearLayout.LayoutParams(-1, dp(14)));
+
+        LinearLayout pill = new LinearLayout(this);
+        pill.setGravity(Gravity.CENTER);
+        pill.setPadding(dp(18), dp(12), dp(18), dp(12));
+        GradientDrawable pillBg = new GradientDrawable();
+        pillBg.setColor(Color.rgb(255, 235, 214));
+        pillBg.setStroke(1, Color.rgb(255, 137, 4));
+        pillBg.setCornerRadius(dp(30));
+        pill.setBackground(pillBg);
+        pill.addView(serif(weeklyProgressText(analyzed), 28, Colors.ACCENT));
+        LinearLayout.LayoutParams pillLp = new LinearLayout.LayoutParams(-1, dp(72));
+        pillLp.setMargins(0, dp(16), 0, dp(16));
+        panel.addView(pill, pillLp);
+
+        panel.addView(text("READINESS", 12, Colors.MUTED, true));
+        panel.addView(text("Usage Access: " + (appReader.hasUsageAccess() ? "enabled" : "needed")
+                + "\nScreen capture: " + captureHealthHeadline(prefs.captureHealth())
+                + "\nNotifications: " + (hasNotificationPermission() ? "enabled" : "needed")
+                + "\nRemaining batches: " + Math.max(0, WEEKLY_REQUIRED_BATCHES - capped), 14, Colors.TEXT, false));
+
+        LinearLayout actions = row();
+        Button notify = pillButton(hasNotificationPermission() ? "Notify when ready" : "Enable notifications");
+        notify.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                maybeRequestNotifications();
+                ReadyNotificationCenter.checkAfterAnalysis(MainActivity.this);
+                setStatus(hasNotificationPermission() ? "Weekly ready notification will appear after enough data." : "Enable notifications, then Dayflow can remind you.");
+                refresh();
+            }
+        });
+        Button capture = smallButton("Start capture");
+        capture.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { requestScreenCapture(); }
+        });
+        actions.addView(notify, new LinearLayout.LayoutParams(0, dp(44), 1));
+        actions.addView(capture, new LinearLayout.LayoutParams(dp(112), dp(44)));
+        panel.addView(actions);
+
+        Button analyze = smallButton("Analyze now");
+        analyze.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                setStatus("Analyzing recent batches...");
+                new Thread(new Runnable() {
+                    @Override public void run() {
+                        new AnalysisEngine(MainActivity.this).processNow();
+                        runOnUiThread(new Runnable() {
+                            @Override public void run() {
+                                setStatus("Analysis complete.");
+                                refresh();
+                            }
+                        });
+                    }
+                }, "dayflow-weekly-access-analysis").start();
+            }
+        });
+        panel.addView(analyze, new LinearLayout.LayoutParams(-1, dp(42)));
+
+        content.addView(panel);
     }
 
     private void renderWeeklyInsights(long weekStart, List<TimelineCard> cards, List<TimelineCard> previousCards) {
@@ -2291,14 +2394,14 @@ public final class MainActivity extends Activity {
         panel.addView(deleteDay, new LinearLayout.LayoutParams(-1, dp(44)));
 
         panel.addView(text("AI provider", 13, Colors.MUTED, true));
-        final EditText provider = field("Provider: Heuristic, Gemini, or Ollama", prefs.provider(), true);
+        final EditText provider = field("Provider: Custom API, Heuristic, Gemini, or Ollama", prefs.provider(), true);
         panel.addView(provider, new LinearLayout.LayoutParams(-1, dp(54)));
 
         final EditText backupProvider = field("Backup provider", prefs.backupProvider(), true);
         panel.addView(backupProvider, new LinearLayout.LayoutParams(-1, dp(54)));
 
         final Switch cloud = new Switch(this);
-        cloud.setText("Use Gemini vision when API key is set");
+        cloud.setText("Use Gemini when API key is set");
         cloud.setTextColor(Colors.TEXT);
         cloud.setTypeface(DayflowType.sans(this));
         cloud.setChecked(prefs.useCloudAnalyzer());
@@ -2309,6 +2412,15 @@ public final class MainActivity extends Activity {
             }
         });
         panel.addView(cloud);
+
+        final EditText customEndpoint = field("Custom API endpoint", prefs.customApiEndpoint(), true);
+        panel.addView(customEndpoint, new LinearLayout.LayoutParams(-1, dp(56)));
+
+        final EditText customKey = field("Custom API key", prefs.customApiKey(), true);
+        panel.addView(customKey, new LinearLayout.LayoutParams(-1, dp(56)));
+
+        final EditText customModel = field("Custom API model", prefs.customApiModel(), true);
+        panel.addView(customModel, new LinearLayout.LayoutParams(-1, dp(56)));
 
         final EditText apiKey = field("Gemini API key", prefs.geminiApiKey(), true);
         apiKey.setText(prefs.geminiApiKey());
@@ -2324,7 +2436,20 @@ public final class MainActivity extends Activity {
         final EditText ollamaModel = field("Ollama vision model", prefs.ollamaModel(), true);
         panel.addView(ollamaModel, new LinearLayout.LayoutParams(-1, dp(56)));
 
-        Button useOllama = smallButton("Use Ollama local AI");
+        Button useCustom = smallButton("Use Custom API");
+        useCustom.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                provider.setText("Custom API");
+                prefs.setProvider("Custom API");
+                prefs.setCustomApiEndpoint(customEndpoint.getText().toString());
+                prefs.setCustomApiKey(customKey.getText().toString());
+                prefs.setCustomApiModel(customModel.getText().toString());
+                setStatus("Custom API selected.");
+            }
+        });
+        panel.addView(useCustom, new LinearLayout.LayoutParams(-1, dp(42)));
+
+        Button useOllama = smallButton("Use Ollama");
         useOllama.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
                 provider.setText("Ollama");
@@ -2341,6 +2466,9 @@ public final class MainActivity extends Activity {
             @Override public void onClick(View view) {
                 prefs.setProvider(provider.getText().toString());
                 prefs.setBackupProvider(backupProvider.getText().toString());
+                prefs.setCustomApiEndpoint(customEndpoint.getText().toString());
+                prefs.setCustomApiKey(customKey.getText().toString());
+                prefs.setCustomApiModel(customModel.getText().toString());
                 prefs.setGeminiApiKey(apiKey.getText().toString());
                 prefs.setGeminiModel(model.getText().toString());
                 prefs.setOllamaEndpoint(ollama.getText().toString());
@@ -2642,20 +2770,31 @@ public final class MainActivity extends Activity {
     private void renderSettingsProviders(LinearLayout panel) {
         panel.addView(text("Providers", 13, Colors.MUTED, true));
         panel.addView(text("Primary: " + prefs.provider() + "\nBackup: " + prefs.backupProvider(), 14, Colors.TEXT, false));
-        final EditText provider = field("Provider: Heuristic, Gemini, or Ollama", prefs.provider(), true);
+        panel.addView(text("Custom API supports OpenAI-compatible chat completion endpoints for timeline vision, chat, Daily, and Journal.", 14, Colors.MUTED, false));
+        final EditText provider = field("Provider: Custom API, Heuristic, Gemini, or Ollama", prefs.provider(), true);
         final EditText backupProvider = field("Backup provider", prefs.backupProvider(), true);
+        final EditText customEndpoint = field("Custom API endpoint", prefs.customApiEndpoint(), true);
+        final EditText customKey = field("Custom API key", prefs.customApiKey(), true);
+        final EditText customModel = field("Custom API model", prefs.customApiModel(), true);
         final EditText apiKey = field("Gemini API key", prefs.geminiApiKey(), true);
         final EditText model = field("Gemini model", prefs.geminiModel(), true);
         final EditText ollama = field("Ollama endpoint", prefs.ollamaEndpoint(), true);
         final EditText ollamaModel = field("Ollama vision model", prefs.ollamaModel(), true);
         panel.addView(provider, new LinearLayout.LayoutParams(-1, dp(54)));
         panel.addView(backupProvider, new LinearLayout.LayoutParams(-1, dp(54)));
+        panel.addView(customEndpoint, new LinearLayout.LayoutParams(-1, dp(56)));
+        panel.addView(customKey, new LinearLayout.LayoutParams(-1, dp(56)));
+        panel.addView(customModel, new LinearLayout.LayoutParams(-1, dp(56)));
         panel.addView(apiKey, new LinearLayout.LayoutParams(-1, dp(56)));
         panel.addView(model, new LinearLayout.LayoutParams(-1, dp(56)));
         panel.addView(ollama, new LinearLayout.LayoutParams(-1, dp(56)));
         panel.addView(ollamaModel, new LinearLayout.LayoutParams(-1, dp(56)));
 
         LinearLayout quick = row();
+        Button custom = smallButton("Custom");
+        custom.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { provider.setText("Custom API"); }
+        });
         Button heuristic = smallButton("Heuristic");
         heuristic.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) { provider.setText("Heuristic"); }
@@ -2668,6 +2807,7 @@ public final class MainActivity extends Activity {
         local.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) { provider.setText("Ollama"); }
         });
+        quick.addView(custom, new LinearLayout.LayoutParams(0, dp(40), 1));
         quick.addView(heuristic, new LinearLayout.LayoutParams(0, dp(40), 1));
         quick.addView(gemini, new LinearLayout.LayoutParams(0, dp(40), 1));
         quick.addView(local, new LinearLayout.LayoutParams(0, dp(40), 1));
@@ -2677,8 +2817,8 @@ public final class MainActivity extends Activity {
         Button test = smallButton("Test selected provider");
         test.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                saveProviderFields(provider, backupProvider, apiKey, model, ollama, ollamaModel);
-                testSelectedProvider(provider.getText().toString(), apiKey.getText().toString(), model.getText().toString(), ollama.getText().toString(), ollamaModel.getText().toString());
+                saveProviderFields(provider, backupProvider, customEndpoint, customKey, customModel, apiKey, model, ollama, ollamaModel);
+                testSelectedProvider(provider.getText().toString(), customEndpoint.getText().toString(), customKey.getText().toString(), customModel.getText().toString(), apiKey.getText().toString(), model.getText().toString(), ollama.getText().toString(), ollamaModel.getText().toString());
             }
         });
         panel.addView(test, new LinearLayout.LayoutParams(-1, dp(42)));
@@ -2686,7 +2826,7 @@ public final class MainActivity extends Activity {
         Button save = pillButton("Save provider settings");
         save.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                saveProviderFields(provider, backupProvider, apiKey, model, ollama, ollamaModel);
+                saveProviderFields(provider, backupProvider, customEndpoint, customKey, customModel, apiKey, model, ollama, ollamaModel);
                 setStatus("Provider settings saved.");
                 refresh();
             }
@@ -2694,16 +2834,19 @@ public final class MainActivity extends Activity {
         panel.addView(save, new LinearLayout.LayoutParams(-1, dp(44)));
     }
 
-    private void saveProviderFields(EditText provider, EditText backupProvider, EditText apiKey, EditText model, EditText ollama, EditText ollamaModel) {
+    private void saveProviderFields(EditText provider, EditText backupProvider, EditText customEndpoint, EditText customKey, EditText customModel, EditText apiKey, EditText model, EditText ollama, EditText ollamaModel) {
         prefs.setProvider(provider.getText().toString());
         prefs.setBackupProvider(backupProvider.getText().toString());
+        prefs.setCustomApiEndpoint(customEndpoint.getText().toString());
+        prefs.setCustomApiKey(customKey.getText().toString());
+        prefs.setCustomApiModel(customModel.getText().toString());
         prefs.setGeminiApiKey(apiKey.getText().toString());
         prefs.setGeminiModel(model.getText().toString());
         prefs.setOllamaEndpoint(ollama.getText().toString());
         prefs.setOllamaModel(ollamaModel.getText().toString());
     }
 
-    private void testSelectedProvider(final String provider, final String apiKey, final String model, final String ollamaEndpoint, final String ollamaModel) {
+    private void testSelectedProvider(final String provider, final String customEndpoint, final String customKey, final String customModel, final String apiKey, final String model, final String ollamaEndpoint, final String ollamaModel) {
         final String normalized = provider == null ? "" : provider.toLowerCase(Locale.US);
         if (normalized.contains("heuristic") || normalized.trim().isEmpty()) {
             setStatus("Heuristic provider is local and ready.");
@@ -2714,7 +2857,9 @@ public final class MainActivity extends Activity {
             @Override public void run() {
                 try {
                     final String result;
-                    if (normalized.contains("ollama")) {
+                    if (isCustomProvider(normalized)) {
+                        result = ProviderConnectionTester.testCustomApi(customEndpoint, customKey, customModel);
+                    } else if (normalized.contains("ollama")) {
                         result = ProviderConnectionTester.testOllama(ollamaEndpoint, ollamaModel);
                     } else if (normalized.contains("gemini")) {
                         result = ProviderConnectionTester.testGemini(apiKey, model);
@@ -2733,6 +2878,11 @@ public final class MainActivity extends Activity {
                 }
             }
         }, "dayflow-provider-test").start();
+    }
+
+    private static boolean isCustomProvider(String provider) {
+        String value = provider == null ? "" : provider.toLowerCase(Locale.US);
+        return value.contains("custom") || value.contains("openai") || value.contains("compatible");
     }
 
     private void renderSettingsData(LinearLayout panel) {

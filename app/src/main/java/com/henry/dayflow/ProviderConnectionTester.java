@@ -54,6 +54,15 @@ final class ProviderConnectionTester {
         return "Ollama connected · " + selectedModel;
     }
 
+    static String testCustomApi(String endpoint, String apiKey, String model) throws Exception {
+        String selectedModel = OpenAiCompatibleClient.selectedModel(model);
+        JSONObject body = OpenAiCompatibleClient.textBody(selectedModel, "Reply with exactly: OK", 0);
+        String response = OpenAiCompatibleClient.postChatCompletion(endpoint, apiKey, body, 60_000);
+        String text = OpenAiCompatibleClient.extractText(response);
+        if (text.trim().isEmpty()) throw new IllegalStateException("Custom API returned empty text");
+        return "Custom API connected · " + selectedModel;
+    }
+
     private static String postJson(String endpoint, String json, int readTimeoutMs) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
         connection.setConnectTimeout(15_000);

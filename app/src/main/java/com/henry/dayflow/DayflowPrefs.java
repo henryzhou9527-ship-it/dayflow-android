@@ -60,6 +60,18 @@ final class DayflowPrefs {
         return prefs.getString("ollama_model", "qwen3-vl:4b");
     }
 
+    String customApiEndpoint() {
+        return prefs.getString("custom_api_endpoint", "https://api.openai.com/v1");
+    }
+
+    String customApiKey() {
+        return prefs.getString("custom_api_key", "");
+    }
+
+    String customApiModel() {
+        return prefs.getString("custom_api_model", OpenAiCompatibleClient.DEFAULT_MODEL);
+    }
+
     String outputLanguageOverride() {
         return prefs.getString("output_language_override", "");
     }
@@ -259,6 +271,18 @@ final class DayflowPrefs {
 
     void setOllamaModel(String model) {
         prefs.edit().putString("ollama_model", model == null || model.trim().isEmpty() ? "qwen3-vl:4b" : model.trim()).apply();
+    }
+
+    void setCustomApiEndpoint(String endpoint) {
+        prefs.edit().putString("custom_api_endpoint", endpoint == null || endpoint.trim().isEmpty() ? "https://api.openai.com/v1" : endpoint.trim()).apply();
+    }
+
+    void setCustomApiKey(String key) {
+        prefs.edit().putString("custom_api_key", key == null ? "" : key.trim()).apply();
+    }
+
+    void setCustomApiModel(String model) {
+        prefs.edit().putString("custom_api_model", OpenAiCompatibleClient.selectedModel(model)).apply();
     }
 
     void setOutputLanguageOverride(String language) {
