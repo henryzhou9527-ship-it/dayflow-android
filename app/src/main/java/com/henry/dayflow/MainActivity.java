@@ -551,6 +551,7 @@ public final class MainActivity extends Activity {
             long distractionLimitMs = goal.distractionLimitMinutes * TimeUtil.MINUTE;
             panel.addView(goalLine("Focus target", metrics.productiveMs, focusTargetMs, Colors.WORK, true));
             panel.addView(goalLine("Distraction limit", metrics.distractionMs, distractionLimitMs, Colors.DISTRACTION, false));
+            panel.addView(text("Focus: " + goalCategorySummary(goal.focusCategories) + "\nLimit: " + goalCategorySummary(goal.distractionCategories), 13, Colors.MUTED, false));
             panel.addView(text(goalStatus(metrics, goal), 14, Colors.TEXT, false));
         }
 
@@ -558,8 +559,7 @@ public final class MainActivity extends Activity {
         Button edit = pillButton("Edit goals");
         edit.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                selectedTab = "Journal";
-                refresh();
+                showDayGoalFlow(goal, metrics);
             }
         });
         Button skip = smallButton(goal.skipped ? "Resume" : "Skip");
@@ -575,6 +575,248 @@ public final class MainActivity extends Activity {
         actions.addView(skip, new LinearLayout.LayoutParams(dp(104), dp(44)));
         panel.addView(actions);
         content.addView(panel);
+    }
+
+    private void showDayGoalFlow(final DayGoal current, DashboardMetrics todayMetrics) {
+        final DayGoal draft = copyGoal(current);
+        final Map<String, String> assignment = goalAssignmentMap(draft);
+        final LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(dp(4), dp(4), dp(4), 0);
+
+        String previousDay = offsetDay(selectedDay, -1);
+        DashboardMetrics yesterday = db.dashboardForDay(previousDay);
+        DayGoal previousGoal = db.fetchDayGoal(previousDay);
+        DashboardMetrics lastWeekAverage = averageMetrics(selectedDay, 7);
+
+        body.addView(serif("Yesterday's review", 28, Colors.TEXT));
+        body.addView(goalReviewRow("Focus target", previousGoal.focusTargetMinutes * TimeUtil.MINUTE, yesterday.productiveMs, Colors.WORK, true));
+        body.addView(goalReviewRow("Distraction limit", previousGoal.distractionLimitMinutes * TimeUtil.MINUTE, yesterday.distractionMs, Colors.DISTRACTION, false));
+        body.addView(text("Last 7-day average: " + TimeUtil.shortDuration(lastWeekAverage.productiveMs) + " focus · "
+                + TimeUtil.shortDuration(lastWeekAverage.distractionMs) + " distraction", 13, Colors.MUTED, false));
+
+        addGapTo(body, 10);
+        body.addView(serif("Where do you want to spend your time today?", 24, Colors.ACCENT));
+        final EditText focusTarget = field("Focus target minutes", String.valueOf(draft.focusTargetMinutes), true);
+        final EditText distractionLimit = field("Distraction limit minutes", String.valueOf(draft.distractionLimitMinutes), true);
+        focusTarget.setInputType(InputType.TYPE_CLASS_NUMBER);
+        distractionLimit.setInputType(InputType.TYPE_CLASS_NUMBER);
+        body.addView(focusTarget, new LinearLayout.LayoutParams(-1, dp(54)));
+        body.addView(distractionLimit, new LinearLayout.LayoutParams(-1, dp(54)));
+
+        body.addView(text("Categories", 13, Colors.MUTED, true));
+        body.addView(text("Tap each category into Focus, Distraction, or Off. This mirrors Dayflow's goal setup while staying touch-native.", 13, Colors.MUTED, false));
+        final LinearLayout categoryList = new LinearLayout(this);
+        categoryList.setOrientation(LinearLayout.VERTICAL);
+        body.addView(categoryList);
+        renderGoalCategoryAssignments(categoryList, assignment);
+
+        final Switch skipped = new Switch(this);
+        skipped.setText("Skip goals for this day");
+        skipped.setTextColor(Colors.TEXT);
+        skipped.setTextSize(13);
+        skipped.setTypeface(DayflowType.sans(this));
+        skipped.setChecked(draft.skipped);
+        body.addView(skipped);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(body, new ScrollView.LayoutParams(-1, -2));
+
+        new AlertDialog.Builder(this)
+                .setTitle("Day goals")
+                .setView(scroll)
+                .setPositiveButton("Confirm", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        draft.focusTargetMinutes = parseInt(focusTarget.getText().toString(), draft.focusTargetMinutes);
+                        draft.distractionLimitMinutes = parseInt(distractionLimit.getText().toString(), draft.distractionLimitMinutes);
+                        draft.skipped = skipped.isChecked();
+                        applyGoalAssignments(draft, assignment);
+                        db.saveDayGoal(draft);
+                        setStatus(draft.skipped ? "Goals skipped for today." : "Goals saved.");
+                        refresh();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .setNeutralButton("Skip today", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        draft.skipped = true;
+                        applyGoalAssignments(draft, assignment);
+                        db.saveDayGoal(draft);
+                        setStatus("Goals skipped for today.");
+                        refresh();
+                    }
+                })
+                .show();
+    }
+
+    private void renderGoalCategoryAssignments(LinearLayout list, final Map<String, String> assignment) {
+        list.removeAllViews();
+        for (Category category : db.fetchCategories()) {
+            if (category.system || category.idle) continue;
+            final String name = category.name;
+            LinearLayout item = new LinearLayout(this);
+            item.setOrientation(LinearLayout.VERTICAL);
+            item.setPadding(0, dp(8), 0, dp(8));
+
+            TextView label = text(name, 14, Colors.TEXT, false);
+            GradientDrawable swatch = new GradientDrawable();
+            swatch.setColor(parseColor(category.colorHex, Colors.colorForCategory(category.name)));
+            swatch.setCornerRadius(dp(5));
+            label.setCompoundDrawablesWithIntrinsicBounds(null, null, null, null);
+            item.addView(label);
+
+            final Button focus = smallButton("Focus");
+            final Button distraction = smallButton("Distraction");
+            final Button off = smallButton("Off");
+            final Button[] buttons = new Button[]{focus, distraction, off};
+            final int color = parseColor(category.colorHex, Colors.colorForCategory(category.name));
+            updateGoalAssignmentButtons(buttons, assignment.get(name), color);
+            focus.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View view) {
+                    assignment.put(name, "focus");
+                    updateGoalAssignmentButtons(buttons, "focus", color);
+                }
+            });
+            distraction.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View view) {
+                    assignment.put(name, "distraction");
+                    updateGoalAssignmentButtons(buttons, "distraction", color);
+                }
+            });
+            off.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View view) {
+                    assignment.put(name, "off");
+                    updateGoalAssignmentButtons(buttons, "off", color);
+                }
+            });
+            LinearLayout buttonsRow = row();
+            buttonsRow.addView(focus, new LinearLayout.LayoutParams(0, dp(38), 1));
+            buttonsRow.addView(distraction, new LinearLayout.LayoutParams(0, dp(38), 1));
+            buttonsRow.addView(off, new LinearLayout.LayoutParams(0, dp(38), 1));
+            item.addView(buttonsRow);
+            list.addView(item);
+        }
+    }
+
+    private void updateGoalAssignmentButtons(Button[] buttons, String selected, int color) {
+        String mode = selected == null ? "off" : selected;
+        for (Button button : buttons) {
+            String label = button.getText().toString().toLowerCase(Locale.US);
+            boolean active = ("focus".equals(mode) && label.contains("focus"))
+                    || ("distraction".equals(mode) && label.contains("distraction"))
+                    || ("off".equals(mode) && label.contains("off"));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setCornerRadius(dp(18));
+            if (active) {
+                bg.setColor(ColorUtils.withAlpha(color, label.contains("off") ? 120 : 210));
+                bg.setStroke(1, ColorUtils.withAlpha(color, 240));
+                button.setTextColor(Colors.TEXT);
+            } else {
+                bg.setColor(Colors.CARD_ALT);
+                bg.setStroke(1, Colors.STROKE);
+                button.setTextColor(Colors.MUTED);
+            }
+            button.setBackground(bg);
+        }
+    }
+
+    private LinearLayout goalReviewRow(String title, long targetMs, long actualMs, int color, boolean higherIsBetter) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(12), dp(12), dp(12), dp(12));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.argb(155, 255, 255, 255));
+        bg.setStroke(1, Colors.STROKE);
+        bg.setCornerRadius(dp(12));
+        card.setBackground(bg);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(8), 0, 0);
+        card.setLayoutParams(lp);
+
+        float ratio = targetMs <= 0 ? 0 : Math.min(1f, actualMs / (float) targetMs);
+        int percent = Math.round(ratio * 100f);
+        String verdict = higherIsBetter
+                ? (actualMs >= targetMs ? "Reached" : "In progress")
+                : (actualMs <= targetMs ? "Inside limit" : "Over limit");
+        card.addView(text(title + " · " + verdict, 13, Colors.MUTED, true));
+        card.addView(serif(TimeUtil.shortDuration(actualMs) + " / " + TimeUtil.shortDuration(targetMs), 24, color));
+        card.addView(progressBar(color, ratio), new LinearLayout.LayoutParams(-1, dp(12)));
+        card.addView(text(percent + "% of target", 12, Colors.MUTED, false));
+        return card;
+    }
+
+    private DayGoal copyGoal(DayGoal original) {
+        DayGoal copy = new DayGoal();
+        copy.day = original.day;
+        copy.focusTargetMinutes = original.focusTargetMinutes;
+        copy.distractionLimitMinutes = original.distractionLimitMinutes;
+        copy.skipped = original.skipped;
+        for (DayGoalCategory category : original.focusCategories) {
+            copy.focusCategories.add(new DayGoalCategory(category.name, category.colorHex, category.order));
+        }
+        for (DayGoalCategory category : original.distractionCategories) {
+            copy.distractionCategories.add(new DayGoalCategory(category.name, category.colorHex, category.order));
+        }
+        return copy;
+    }
+
+    private Map<String, String> goalAssignmentMap(DayGoal goal) {
+        Map<String, String> assignment = new LinkedHashMap<>();
+        for (Category category : db.fetchCategories()) {
+            if (!category.system && !category.idle) assignment.put(category.name, "off");
+        }
+        for (DayGoalCategory category : goal.focusCategories) assignment.put(category.name, "focus");
+        for (DayGoalCategory category : goal.distractionCategories) assignment.put(category.name, "distraction");
+        return assignment;
+    }
+
+    private void applyGoalAssignments(DayGoal goal, Map<String, String> assignment) {
+        goal.focusCategories.clear();
+        goal.distractionCategories.clear();
+        int focusOrder = 0;
+        int distractionOrder = 0;
+        for (Category category : db.fetchCategories()) {
+            String mode = assignment.get(category.name);
+            if ("focus".equals(mode)) {
+                goal.focusCategories.add(new DayGoalCategory(category.name, category.colorHex, focusOrder++));
+            } else if ("distraction".equals(mode)) {
+                goal.distractionCategories.add(new DayGoalCategory(category.name, category.colorHex, distractionOrder++));
+            }
+        }
+    }
+
+    private String goalCategorySummary(List<DayGoalCategory> categories) {
+        if (categories == null || categories.isEmpty()) return "None";
+        StringBuilder out = new StringBuilder();
+        for (DayGoalCategory category : categories) {
+            if (out.length() > 0) out.append(", ");
+            out.append(category.name);
+            if (out.length() > 80) {
+                out.append("...");
+                break;
+            }
+        }
+        return out.toString();
+    }
+
+    private DashboardMetrics averageMetrics(String anchorDay, int days) {
+        int count = Math.max(1, days);
+        DashboardMetrics total = metricsFor(db.fetchTimelineCardsRange(
+                TimeUtil.dayStartMs(anchorDay) - count * TimeUtil.DAY,
+                TimeUtil.dayStartMs(anchorDay)));
+        total.trackedMs /= count;
+        total.productiveMs /= count;
+        total.distractionMs /= count;
+        return total;
+    }
+
+    private String offsetDay(String day, int offset) {
+        return TimeUtil.dayKey(TimeUtil.dayStartMs(day) + offset * TimeUtil.DAY + TimeUtil.HOUR);
+    }
+
+    private void addGapTo(LinearLayout parent, int gapDp) {
+        Space space = new Space(this);
+        parent.addView(space, new LinearLayout.LayoutParams(1, dp(gapDp)));
     }
 
     private void renderDailyFocusSummary(List<TimelineCard> cards, DashboardMetrics metrics) {

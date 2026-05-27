@@ -20,7 +20,7 @@ import java.util.Map;
 
 final class DayflowDatabase extends SQLiteOpenHelper {
     private static final String DB_NAME = "dayflow.sqlite";
-    private static final int DB_VERSION = 5;
+    private static final int DB_VERSION = 6;
 
     private final Context appContext;
 
@@ -50,6 +50,9 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         }
         if (oldVersion < 5) {
             addColumnIfMissing(db, "timeline_cards", "video_summary_path", "TEXT");
+        }
+        if (oldVersion < 6) {
+            createFeatureTables(db);
         }
     }
 
@@ -141,6 +144,15 @@ final class DayflowDatabase extends SQLiteOpenHelper {
                 "is_skipped INTEGER NOT NULL DEFAULT 0," +
                 "created_at INTEGER NOT NULL," +
                 "updated_at INTEGER NOT NULL)");
+
+        db.execSQL("CREATE TABLE IF NOT EXISTS day_goal_categories (" +
+                "day TEXT NOT NULL," +
+                "kind TEXT NOT NULL," +
+                "category_name TEXT NOT NULL," +
+                "color_hex TEXT NOT NULL," +
+                "sort_order INTEGER NOT NULL," +
+                "PRIMARY KEY(day, kind, category_name))");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_day_goal_categories_day_kind ON day_goal_categories(day, kind, sort_order)");
 
         db.execSQL("CREATE TABLE IF NOT EXISTS timeline_review_ratings (" +
                 "id INTEGER PRIMARY KEY AUTOINCREMENT," +
@@ -672,10 +684,12 @@ final class DayflowDatabase extends SQLiteOpenHelper {
             goal.day = day;
             goal.focusTargetMinutes = 240;
             goal.distractionLimitMinutes = 45;
-            if (!c.moveToFirst()) return goal;
-            goal.focusTargetMinutes = c.getInt(c.getColumnIndexOrThrow("focus_target_minutes"));
-            goal.distractionLimitMinutes = c.getInt(c.getColumnIndexOrThrow("distraction_limit_minutes"));
-            goal.skipped = c.getInt(c.getColumnIndexOrThrow("is_skipped")) != 0;
+            if (c.moveToFirst()) {
+                goal.focusTargetMinutes = c.getInt(c.getColumnIndexOrThrow("focus_target_minutes"));
+                goal.distractionLimitMinutes = c.getInt(c.getColumnIndexOrThrow("distraction_limit_minutes"));
+                goal.skipped = c.getInt(c.getColumnIndexOrThrow("is_skipped")) != 0;
+            }
+            loadDayGoalCategories(goal);
             return goal;
         } finally {
             c.close();
@@ -691,7 +705,62 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         values.put("is_skipped", goal.skipped ? 1 : 0);
         values.put("created_at", now);
         values.put("updated_at", now);
-        getWritableDatabase().insertWithOnConflict("day_goals", null, values, SQLiteDatabase.CONFLICT_REPLACE);
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            db.insertWithOnConflict("day_goals", null, values, SQLiteDatabase.CONFLICT_REPLACE);
+            db.delete("day_goal_categories", "day = ?", new String[]{goal.day});
+            insertDayGoalCategories(db, goal.day, "focus", goal.focusCategories);
+            insertDayGoalCategories(db, goal.day, "distraction", goal.distractionCategories);
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    private void loadDayGoalCategories(DayGoal goal) {
+        goal.focusCategories.clear();
+        goal.distractionCategories.clear();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT kind, category_name, color_hex, sort_order FROM day_goal_categories WHERE day = ? ORDER BY kind ASC, sort_order ASC",
+                new String[]{goal.day});
+        try {
+            while (c.moveToNext()) {
+                String kind = c.getString(0);
+                DayGoalCategory category = new DayGoalCategory(c.getString(1), c.getString(2), c.getInt(3));
+                if ("distraction".equals(kind)) goal.distractionCategories.add(category);
+                else goal.focusCategories.add(category);
+            }
+        } finally {
+            c.close();
+        }
+        if (goal.focusCategories.isEmpty() && goal.distractionCategories.isEmpty()) {
+            int focusOrder = 0;
+            int distractionOrder = 0;
+            for (Category category : fetchCategories()) {
+                if (category.system || category.idle) continue;
+                String normalized = category.name == null ? "" : category.name.toLowerCase(Locale.US);
+                if (normalized.contains("distraction")) {
+                    goal.distractionCategories.add(new DayGoalCategory(category.name, category.colorHex, distractionOrder++));
+                } else {
+                    goal.focusCategories.add(new DayGoalCategory(category.name, category.colorHex, focusOrder++));
+                }
+            }
+        }
+    }
+
+    private void insertDayGoalCategories(SQLiteDatabase db, String day, String kind, List<DayGoalCategory> categories) {
+        int order = 0;
+        for (DayGoalCategory category : categories) {
+            if (category.name == null || category.name.trim().isEmpty()) continue;
+            ContentValues values = new ContentValues();
+            values.put("day", day);
+            values.put("kind", kind);
+            values.put("category_name", category.name.trim());
+            values.put("color_hex", category.colorHex == null ? "#E5E7EB" : category.colorHex);
+            values.put("sort_order", order++);
+            db.insertWithOnConflict("day_goal_categories", null, values, SQLiteDatabase.CONFLICT_REPLACE);
+        }
     }
 
     synchronized void saveReviewRating(TimelineCard card, String rating) {
