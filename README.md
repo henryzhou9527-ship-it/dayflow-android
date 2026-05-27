@@ -10,6 +10,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Can optionally use an Android AccessibilityService as a local-only second signal for window titles and short visible-text snippets, improving analysis without sign-in.
 - Tracks recording health locally, including service heartbeat, last successful frame, capture errors, active resolution, and restart prompts when the recorder needs attention.
 - Builds 15-minute analysis batches and rewrites cards with a 45-minute lookback window.
+- Skips AI calls for long launcher/lock-screen idle batches and writes an Idle card directly, matching Dayflow's lightweight idle shortcut behavior.
 - Supports Custom API endpoints with OpenAI-compatible chat completions, Gemini vision analysis, heuristic fallback, and Ollama vision models such as `qwen3-vl:4b`.
 - Chat uses saved timeline cards, journal notes, category totals, and recent chat history, then answers through Custom API, Gemini, or Ollama when configured.
 - Chat renders Dayflow-style user/assistant bubbles, context chips, suggested prompts, markdown blocks, code blocks, copy actions, and lightweight feedback controls.

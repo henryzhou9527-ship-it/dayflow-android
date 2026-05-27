@@ -7,6 +7,18 @@ final class AppClassifier {
         String haystack = ((packageName == null ? "" : packageName) + " " + (label == null ? "" : label)).toLowerCase();
 
         if (haystack.trim().isEmpty()) return "Idle";
+        if (containsAny(haystack,
+                "systemui",
+                "keyguard",
+                "lockscreen",
+                "launcher",
+                "trebuchet",
+                "one ui home",
+                "pixel launcher",
+                "always on display",
+                "ambient display")) {
+            return "Idle";
+        }
         if (containsAny(haystack, "slack", "discord", "telegram", "whatsapp", "wechat", "messenger", "messages", "gmail", "mail", "zoom", "meet", "teams")) {
             return "Communication";
         }

@@ -60,6 +60,18 @@ final class AnalysisEngine {
             return;
         }
 
+        TimelineCard idleShortcut = idleShortcutCard(batchId, screenshots);
+        if (idleShortcut != null) {
+            List<TimelineCard> cards = new ArrayList<>();
+            cards.add(idleShortcut);
+            db.saveObservations(batchId, cards);
+            db.replaceTimelineCardsInRange(startMs, endMs, cards, batchId);
+            pregenerateTimelapsesIfNeeded(startMs, endMs);
+            db.updateBatch(batchId, "analyzed", "Idle shortcut");
+            logEngineEvent(batchId, "timeline_idle_shortcut", "success", screenshots, cards.size(), "Saved idle card without AI call");
+            return;
+        }
+
         db.updateBatch(batchId, "processing", null);
         try {
             long windowStart = Math.max(startMs, endMs - prefs.cardLookbackMs());
@@ -96,6 +108,59 @@ final class AnalysisEngine {
                     prefs.backupProvider(),
                     batchId);
         }
+    }
+
+    private TimelineCard idleShortcutCard(long batchId, List<ScreenshotRecord> screenshots) {
+        if (screenshots.size() < 3) return null;
+        int idleSamples = 0;
+        for (ScreenshotRecord screenshot : screenshots) {
+            if (isExplicitIdleSample(screenshot)) idleSamples++;
+        }
+        float ratio = idleSamples / (float) screenshots.size();
+        if (ratio < 0.8f) return null;
+
+        ScreenshotRecord first = screenshots.get(0);
+        ScreenshotRecord last = screenshots.get(screenshots.size() - 1);
+        TimelineCard card = new TimelineCard();
+        card.batchId = batchId;
+        card.startMs = first.capturedAtMs;
+        card.endMs = Math.max(last.capturedAtMs, first.capturedAtMs + TimeUtil.MINUTE);
+        card.day = TimeUtil.dayKey(card.startMs);
+        card.category = "Idle";
+        card.subcategory = "Screen idle";
+        card.title = "Idle";
+        card.summary = "The device stayed on the launcher, lock screen, or another system idle surface for most of this block.";
+        card.detailedSummary = "Dayflow skipped AI analysis because "
+                + idleSamples + " of " + screenshots.size()
+                + " screenshots were explicit Android idle surfaces. Captured "
+                + TimeUtil.timeLabel(card.startMs) + " to " + TimeUtil.timeLabel(card.endMs) + ".";
+        card.metadata = "source=idle_shortcut;idle_ratio=" + Math.round(ratio * 100f) + ";samples=" + screenshots.size() + ";";
+        return card;
+    }
+
+    private static boolean isExplicitIdleSample(ScreenshotRecord screenshot) {
+        String category = AppClassifier.categoryFor(screenshot.packageName, screenshot.appLabel);
+        if (!"Idle".equals(category)) return false;
+        String app = ((screenshot.packageName == null ? "" : screenshot.packageName)
+                + " " + (screenshot.appLabel == null ? "" : screenshot.appLabel)).toLowerCase();
+        return containsAny(app,
+                "systemui",
+                "keyguard",
+                "lockscreen",
+                "launcher",
+                "trebuchet",
+                "one ui home",
+                "pixel launcher",
+                "always on display",
+                "ambient display");
+    }
+
+    private static boolean containsAny(String value, String... needles) {
+        String haystack = value == null ? "" : value;
+        for (String needle : needles) {
+            if (haystack.contains(needle)) return true;
+        }
+        return false;
     }
 
     private static String shortText(String value, int max) {

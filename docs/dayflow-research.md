@@ -46,14 +46,12 @@ Implemented Android equivalent:
 - `ForegroundAppReader`: reads recent UsageStats events for foreground app label/package.
 - `DayflowDatabase`: local SQLite schema modeled after Dayflow tables.
 - `AnalysisEngine`: 24-hour lookback, 15-minute batch target, 2-minute split gap, 45-minute replacement window.
+- `AnalysisEngine`: explicit launcher/lock-screen idle shortcut that writes an Idle card without spending an AI call.
 - `HybridActivityAnalyzer`: Gemini vision when configured; otherwise local heuristic cards.
 - `MainActivity`: Dayflow-like Timeline, Daily, Weekly, Chat, and Settings surfaces.
 
 ## What To Improve Next
 
-- Add Android AccessibilityService as a second signal for window titles and text snippets.
-- Add a real local multimodal model path through an on-device runtime or LAN Ollama endpoint.
 - Add encrypted screenshot storage and retention controls.
-- Add timelapse playback from captured screenshots.
-- Add timeline card review/rating gestures.
-- Add category editor UI matching upstream role presets.
+- Add richer source-level provider parity for Dayflow backend and chat CLI routes.
+- Add deeper mobile QA on a physical Android device for capture continuity, notification deep links, and long-run battery behavior.
