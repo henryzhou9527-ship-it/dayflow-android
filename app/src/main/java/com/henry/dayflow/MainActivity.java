@@ -10,6 +10,7 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Color;
 import android.media.projection.MediaProjectionManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -30,6 +31,8 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.graphics.drawable.GradientDrawable;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -55,6 +58,7 @@ public final class MainActivity extends Activity {
         prefs = new DayflowPrefs(this);
         appReader = new ForegroundAppReader(this);
         selectedDay = TimeUtil.dayKey(System.currentTimeMillis());
+        if (!prefs.didOnboard()) selectedTab = "Onboarding";
         maybeRequestNotifications();
         buildUi();
         refresh();
@@ -131,7 +135,17 @@ public final class MainActivity extends Activity {
         tabsScroll.setHorizontalScrollBarEnabled(false);
         tabsScroll.addView(tabRow);
         shell.addView(tabsScroll, new LinearLayout.LayoutParams(-1, dp(48)));
-        for (String tab : new String[]{"Timeline", "Daily", "Weekly", "Journal", "Review", "Chat", "Categories", "Settings"}) addTab(tab);
+        List<String> tabs = new ArrayList<>();
+        if (!prefs.didOnboard()) tabs.add("Onboarding");
+        tabs.add("Timeline");
+        tabs.add("Daily");
+        tabs.add("Weekly");
+        tabs.add("Journal");
+        tabs.add("Review");
+        tabs.add("Chat");
+        tabs.add("Categories");
+        tabs.add("Settings");
+        for (String tab : tabs) addTab(tab);
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(false);
@@ -150,6 +164,10 @@ public final class MainActivity extends Activity {
         List<TimelineCard> dayCards = db.fetchTimelineCards(selectedDay);
         DashboardMetrics metrics = db.dashboardForDay(selectedDay);
 
+        if ("Onboarding".equals(selectedTab)) {
+            renderOnboarding();
+            return;
+        }
         if ("Timeline".equals(selectedTab)) renderTimeline(dayCards, metrics);
         if ("Daily".equals(selectedTab)) renderDaily(dayCards);
         if ("Weekly".equals(selectedTab)) renderWeekly();
@@ -158,6 +176,272 @@ public final class MainActivity extends Activity {
         if ("Chat".equals(selectedTab)) renderChat(metrics);
         if ("Categories".equals(selectedTab)) renderCategories();
         if ("Settings".equals(selectedTab)) renderSettings();
+    }
+
+    private void renderOnboarding() {
+        int step = prefs.onboardingStep();
+        setStatus("Setup " + (step + 1) + " of 8 · " + onboardingTitle(step));
+        renderOnboardingProgress(step);
+        if (step == 0) renderOnboardingIntro();
+        if (step == 1) renderOnboardingRole();
+        if (step == 2) renderOnboardingPreferences();
+        if (step == 3) renderOnboardingProviderChoice();
+        if (step == 4) renderOnboardingProviderSetup();
+        if (step == 5) renderOnboardingCategories();
+        if (step == 6) renderOnboardingPermissions();
+        if (step == 7) renderOnboardingCompletion();
+    }
+
+    private void renderOnboardingProgress(int step) {
+        LinearLayout panel = panel();
+        panel.addView(text("SETUP " + (step + 1) + " OF 8", 12, Colors.MUTED, true));
+        panel.addView(serif(onboardingTitle(step), 30, Colors.TEXT));
+        panel.addView(text(onboardingSubtitle(step), 14, Colors.MUTED, false));
+
+        LinearLayout bar = row();
+        bar.setPadding(0, dp(10), 0, 0);
+        for (int i = 0; i < 8; i++) {
+            View segment = new View(this);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(i <= step ? Colors.ACCENT : Colors.STROKE);
+            bg.setCornerRadius(dp(3));
+            segment.setBackground(bg);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(6), 1);
+            lp.setMargins(0, 0, i == 7 ? 0 : dp(5), 0);
+            bar.addView(segment, lp);
+        }
+        panel.addView(bar);
+        content.addView(panel);
+    }
+
+    private void renderOnboardingIntro() {
+        LinearLayout panel = panel();
+        DayflowLogoView logo = new DayflowLogoView(this);
+        panel.addView(logo, new LinearLayout.LayoutParams(dp(72), dp(72)));
+        panel.addView(serif("Your day, written automatically", 34, Colors.TEXT));
+        panel.addView(text("Dayflow turns private screen snapshots into a calm timeline, daily journal, review surface, and chat memory. Everything starts local; you choose whether Gemini or Ollama helps read the screenshots.", 14, Colors.TEXT, false));
+        addAssetImage(panel, "images/dayflow_content_area.png", 220);
+        Button start = pillButton("Start setup");
+        start.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { goOnboarding(1); }
+        });
+        panel.addView(start, new LinearLayout.LayoutParams(-1, dp(46)));
+        content.addView(panel);
+    }
+
+    private void renderOnboardingRole() {
+        LinearLayout panel = panel();
+        panel.addView(serif("What should Dayflow optimize for?", 28, Colors.TEXT));
+        panel.addView(text("The original Dayflow onboarding uses role selection before categories. This saves the same preference locally so the Android setup can stay personal.", 14, Colors.MUTED, false));
+        String[] roles = new String[]{"Builder", "Founder", "Student", "Designer", "Researcher"};
+        for (String role : roles) {
+            final String value = role;
+            Button button = value.equals(prefs.onboardingRole()) ? pillButton(value) : smallButton(value);
+            button.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View view) {
+                    prefs.setOnboardingRole(value);
+                    goOnboarding(2);
+                }
+            });
+            panel.addView(button, new LinearLayout.LayoutParams(-1, dp(42)));
+        }
+        addOnboardingBack(panel, 0);
+        content.addView(panel);
+    }
+
+    private void renderOnboardingPreferences() {
+        LinearLayout panel = panel();
+        panel.addView(serif("A quick preference check", 28, Colors.TEXT));
+        panel.addView(text("Dayflow asks how you found it and whether you already have a paid AI account before recommending a provider.", 14, Colors.MUTED, false));
+
+        final EditText referral = field("How did you hear about Dayflow?", prefs.onboardingReferral(), false);
+        panel.addView(referral, new LinearLayout.LayoutParams(-1, dp(92)));
+
+        final Switch paidAi = new Switch(this);
+        paidAi.setText("I already have access to Gemini, ChatGPT, Claude, or a local model");
+        paidAi.setTextColor(Colors.TEXT);
+        paidAi.setTextSize(13);
+        paidAi.setTypeface(DayflowType.sans(this));
+        paidAi.setChecked(prefs.onboardingHasPaidAi());
+        panel.addView(paidAi);
+
+        LinearLayout actions = row();
+        Button back = smallButton("Back");
+        back.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { goOnboarding(1); }
+        });
+        Button next = pillButton("Continue");
+        next.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.setOnboardingReferral(referral.getText().toString());
+                prefs.setOnboardingHasPaidAi(paidAi.isChecked());
+                goOnboarding(3);
+            }
+        });
+        actions.addView(back, new LinearLayout.LayoutParams(dp(96), dp(44)));
+        actions.addView(next, new LinearLayout.LayoutParams(0, dp(44), 1));
+        panel.addView(actions);
+        content.addView(panel);
+    }
+
+    private void renderOnboardingProviderChoice() {
+        LinearLayout panel = panel();
+        panel.addView(serif("Choose the analysis engine", 28, Colors.TEXT));
+        panel.addView(text("Heuristic mode works offline from app metadata. Gemini and Ollama can inspect screenshots for richer card titles, summaries, and chat answers.", 14, Colors.MUTED, false));
+        panel.addView(text("Current provider: " + prefs.provider() + " · Backup: " + prefs.backupProvider(), 13, Colors.TEXT, false));
+        panel.addView(providerChoiceButton("Local heuristic only", "Heuristic", 5), new LinearLayout.LayoutParams(-1, dp(44)));
+        panel.addView(providerChoiceButton("Google Gemini vision", "Gemini", 4), new LinearLayout.LayoutParams(-1, dp(44)));
+        panel.addView(providerChoiceButton("Ollama local vision", "Ollama", 4), new LinearLayout.LayoutParams(-1, dp(44)));
+        addOnboardingBack(panel, 2);
+        content.addView(panel);
+    }
+
+    private void renderOnboardingProviderSetup() {
+        LinearLayout panel = panel();
+        panel.addView(serif("Connect the provider", 28, Colors.TEXT));
+        panel.addView(text("Save the model details now. You can change these later in Settings, including the backup route Dayflow tries if the primary provider fails.", 14, Colors.MUTED, false));
+
+        final EditText provider = field("Provider: Gemini or Ollama", prefs.provider(), true);
+        final EditText backupProvider = field("Backup provider", prefs.backupProvider(), true);
+        final EditText apiKey = field("Gemini API key", prefs.geminiApiKey(), true);
+        final EditText model = field("Gemini model", prefs.geminiModel(), true);
+        final EditText ollama = field("Ollama endpoint", prefs.ollamaEndpoint(), true);
+        final EditText ollamaModel = field("Ollama vision model", prefs.ollamaModel(), true);
+        panel.addView(provider, new LinearLayout.LayoutParams(-1, dp(54)));
+        panel.addView(backupProvider, new LinearLayout.LayoutParams(-1, dp(54)));
+        panel.addView(apiKey, new LinearLayout.LayoutParams(-1, dp(54)));
+        panel.addView(model, new LinearLayout.LayoutParams(-1, dp(54)));
+        panel.addView(ollama, new LinearLayout.LayoutParams(-1, dp(54)));
+        panel.addView(ollamaModel, new LinearLayout.LayoutParams(-1, dp(54)));
+
+        LinearLayout quick = row();
+        Button gemini = smallButton("Gemini");
+        gemini.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { provider.setText("Gemini"); }
+        });
+        Button local = smallButton("Ollama");
+        local.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { provider.setText("Ollama"); }
+        });
+        Button heuristic = smallButton("Heuristic");
+        heuristic.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { provider.setText("Heuristic"); }
+        });
+        quick.addView(gemini, new LinearLayout.LayoutParams(0, dp(40), 1));
+        quick.addView(local, new LinearLayout.LayoutParams(0, dp(40), 1));
+        quick.addView(heuristic, new LinearLayout.LayoutParams(0, dp(40), 1));
+        panel.addView(quick);
+
+        LinearLayout actions = row();
+        Button back = smallButton("Back");
+        back.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { goOnboarding(3); }
+        });
+        Button save = pillButton("Save and continue");
+        save.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.setProvider(provider.getText().toString());
+                prefs.setBackupProvider(backupProvider.getText().toString());
+                prefs.setGeminiApiKey(apiKey.getText().toString());
+                prefs.setGeminiModel(model.getText().toString());
+                prefs.setOllamaEndpoint(ollama.getText().toString());
+                prefs.setOllamaModel(ollamaModel.getText().toString());
+                goOnboarding(5);
+            }
+        });
+        actions.addView(back, new LinearLayout.LayoutParams(dp(96), dp(44)));
+        actions.addView(save, new LinearLayout.LayoutParams(0, dp(44), 1));
+        panel.addView(actions);
+        content.addView(panel);
+    }
+
+    private void renderOnboardingCategories() {
+        LinearLayout panel = panel();
+        panel.addView(serif("Tune your categories", 28, Colors.TEXT));
+        panel.addView(text("These labels shape timeline cards, reviews, charts, and chat context. The category editor lets you rename them or change colors just like Dayflow's onboarding color step.", 14, Colors.MUTED, false));
+        for (Category category : db.fetchCategories()) {
+            LinearLayout item = row();
+            TextView swatch = new TextView(this);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(parseColor(category.colorHex, Colors.colorForCategory(category.name)));
+            bg.setCornerRadius(dp(8));
+            swatch.setBackground(bg);
+            item.addView(swatch, new LinearLayout.LayoutParams(dp(16), dp(28)));
+            TextView label = text(category.name + " · " + category.details, 13, Colors.TEXT, false);
+            label.setPadding(dp(10), 0, 0, 0);
+            item.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+            panel.addView(item);
+        }
+
+        Button edit = smallButton("Open category editor");
+        edit.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                selectedTab = "Categories";
+                refresh();
+            }
+        });
+        panel.addView(edit, new LinearLayout.LayoutParams(-1, dp(42)));
+
+        LinearLayout actions = row();
+        Button back = smallButton("Back");
+        back.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { goOnboarding(4); }
+        });
+        Button next = pillButton("Use these categories");
+        next.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { goOnboarding(6); }
+        });
+        actions.addView(back, new LinearLayout.LayoutParams(dp(96), dp(44)));
+        actions.addView(next, new LinearLayout.LayoutParams(0, dp(44), 1));
+        panel.addView(actions);
+        content.addView(panel);
+    }
+
+    private void renderOnboardingPermissions() {
+        LinearLayout panel = panel();
+        panel.addView(serif("Enable the two Android permissions", 28, Colors.TEXT));
+        panel.addView(text("Usage Access tells Dayflow which app is in front. Screen capture is the Android MediaProjection consent prompt that lets Dayflow save private local frames.", 14, Colors.MUTED, false));
+        panel.addView(text(appReader.hasUsageAccess() ? "Usage Access: enabled" : "Usage Access: not enabled yet", 14, appReader.hasUsageAccess() ? Colors.ACCENT : Colors.TEXT, false));
+
+        Button usage = pillButton(appReader.hasUsageAccess() ? "Open Usage Access settings" : "Enable Usage Access");
+        usage.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { startActivity(appReader.usageAccessIntent()); }
+        });
+        panel.addView(usage, new LinearLayout.LayoutParams(-1, dp(44)));
+
+        Button capture = pillButton("Start screen capture");
+        capture.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { requestScreenCapture(); }
+        });
+        panel.addView(capture, new LinearLayout.LayoutParams(-1, dp(44)));
+
+        LinearLayout actions = row();
+        Button back = smallButton("Back");
+        back.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { goOnboarding(5); }
+        });
+        Button next = pillButton("Continue");
+        next.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { goOnboarding(7); }
+        });
+        actions.addView(back, new LinearLayout.LayoutParams(dp(96), dp(44)));
+        actions.addView(next, new LinearLayout.LayoutParams(0, dp(44), 1));
+        panel.addView(actions);
+        content.addView(panel);
+    }
+
+    private void renderOnboardingCompletion() {
+        LinearLayout panel = panel();
+        panel.addView(serif("Dayflow is ready", 32, Colors.TEXT));
+        panel.addView(text("Leave recording on and return after one full 15-minute batch. Your timeline, daily summary, review frames, journal, and chat context will all grow from the same local history.", 14, Colors.TEXT, false));
+        panel.addView(text("Role: " + prefs.onboardingRole() + "\nProvider: " + prefs.provider() + "\nBackup: " + prefs.backupProvider(), 14, Colors.MUTED, false));
+        Button finish = pillButton("Enter Dayflow");
+        finish.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { completeOnboarding(); }
+        });
+        panel.addView(finish, new LinearLayout.LayoutParams(-1, dp(46)));
+        addOnboardingBack(panel, 6);
+        content.addView(panel);
     }
 
     private void renderTimeline(List<TimelineCard> cards, DashboardMetrics metrics) {
@@ -486,6 +770,18 @@ public final class MainActivity extends Activity {
         });
         panel.addView(analyze, new LinearLayout.LayoutParams(-1, dp(44)));
 
+        Button setup = smallButton("Run first-run setup again");
+        setup.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.setDidOnboard(false);
+                prefs.setOnboardingStep(0);
+                selectedTab = "Onboarding";
+                buildUi();
+                refresh();
+            }
+        });
+        panel.addView(setup, new LinearLayout.LayoutParams(-1, dp(42)));
+
         panel.addView(text("Pause recording", 13, Colors.MUTED, true));
         panel.addView(text(prefs.pauseLabel(), 14, Colors.TEXT, false));
         LinearLayout pauseShort = row();
@@ -656,6 +952,85 @@ public final class MainActivity extends Activity {
         content.addView(panel);
     }
 
+    private Button providerChoiceButton(String label, final String providerName, final int nextStep) {
+        Button button = providerName.equalsIgnoreCase(prefs.provider()) ? pillButton(label) : smallButton(label);
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.setProvider(providerName);
+                if ("Heuristic".equalsIgnoreCase(providerName)) prefs.setBackupProvider("Heuristic");
+                goOnboarding(nextStep);
+            }
+        });
+        return button;
+    }
+
+    private void addOnboardingBack(LinearLayout panel, final int step) {
+        Button back = smallButton("Back");
+        back.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { goOnboarding(step); }
+        });
+        panel.addView(back, new LinearLayout.LayoutParams(-1, dp(42)));
+    }
+
+    private void goOnboarding(int step) {
+        prefs.setOnboardingStep(step);
+        selectedTab = "Onboarding";
+        refresh();
+    }
+
+    private void completeOnboarding() {
+        prefs.setDidOnboard(true);
+        prefs.setOnboardingStep(0);
+        selectedTab = "Timeline";
+        buildUi();
+        setStatus("Setup complete. Start recording when you are ready.");
+        refresh();
+    }
+
+    private String onboardingTitle(int step) {
+        switch (step) {
+            case 0: return "Welcome";
+            case 1: return "Role";
+            case 2: return "Preferences";
+            case 3: return "AI Provider";
+            case 4: return "Provider Setup";
+            case 5: return "Categories";
+            case 6: return "Permissions";
+            case 7: return "Completion";
+            default: return "Welcome";
+        }
+    }
+
+    private String onboardingSubtitle(int step) {
+        switch (step) {
+            case 0: return "See the product shape before giving it access.";
+            case 1: return "Pick the lens Dayflow should use for your work.";
+            case 2: return "Save a tiny bit of context for provider recommendations.";
+            case 3: return "Choose local-only, cloud vision, or local vision.";
+            case 4: return "Add the exact model details and backup route.";
+            case 5: return "Review labels and colors before cards are created.";
+            case 6: return "Grant Usage Access and start Android screen capture.";
+            case 7: return "Finish setup and enter the Dayflow timeline.";
+            default: return "";
+        }
+    }
+
+    private void addAssetImage(LinearLayout panel, String assetPath, int heightDp) {
+        try (InputStream stream = getAssets().open(assetPath)) {
+            Bitmap bitmap = BitmapFactory.decodeStream(stream);
+            if (bitmap == null) return;
+            ImageView image = new ImageView(this);
+            image.setImageBitmap(bitmap);
+            image.setAdjustViewBounds(true);
+            image.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            image.setBackgroundColor(Colors.CARD_ALT);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(heightDp));
+            lp.setMargins(0, dp(12), 0, dp(12));
+            panel.addView(image, lp);
+        } catch (IOException ignored) {
+        }
+    }
+
     private void renderCardList(List<TimelineCard> cards) {
         for (TimelineCard card : cards) {
             LinearLayout p = panel();
@@ -810,6 +1185,14 @@ public final class MainActivity extends Activity {
         if (value >= 1024L * 1024L) return String.format(Locale.US, "%.1f MB", value / (1024f * 1024f));
         if (value >= 1024L) return String.format(Locale.US, "%.1f KB", value / 1024f);
         return value + " B";
+    }
+
+    private static int parseColor(String value, int fallback) {
+        try {
+            return Color.parseColor(value);
+        } catch (IllegalArgumentException ignored) {
+            return fallback;
+        }
     }
 
     private String standupText(List<TimelineCard> cards) {

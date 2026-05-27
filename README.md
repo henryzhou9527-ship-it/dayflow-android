@@ -11,7 +11,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Supports heuristic analysis, Gemini vision analysis, and Ollama local vision models such as `qwen3-vl:4b`.
 - Chat uses saved timeline cards, journal notes, category totals, and recent chat history, then answers through Gemini or Ollama when configured.
 - Provider settings include a backup provider so timeline analysis and chat can retry through another route before falling back locally.
-- Adds journal entries, daily goals, review ratings, editable categories, storage stats, per-app privacy blocking, day deletion, and reprocessing controls.
+- Adds first-run onboarding, journal entries, daily goals, review ratings, editable categories, storage stats, per-app privacy blocking, day deletion, and reprocessing controls.
 - Redacts screenshots for blocked apps while still preserving timeline continuity.
 - Supports timed/indefinite recording pauses and shows saved screenshots inside review cards for frame-by-frame context.
 - Exports the current day timeline as Markdown.
@@ -53,11 +53,11 @@ ANDROID_HOME=/Users/henry/.cache/dayflow-build/android-sdk \
 ## First Run
 
 1. Install the APK on an Android device.
-2. Open Dayflow and tap `Start`.
-3. Approve the Android screen-capture prompt.
-4. Open `Settings` and enable Usage Access for Dayflow so foreground app labels are available.
+2. Open Dayflow and follow the first-run setup: welcome, role, preferences, AI provider, categories, permissions, completion.
+3. Enable Usage Access when prompted so foreground app labels are available.
+4. Approve the Android screen-capture prompt.
 5. Leave it running. Timeline cards appear after a complete 15-minute batch.
-6. Optional: add a Gemini API key in Settings and enable Gemini vision analysis.
+6. Optional: add a Gemini API key or Ollama endpoint during setup, or rerun setup later from `Settings`.
 
 ## Current Limits
 

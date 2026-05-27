@@ -60,6 +60,26 @@ final class DayflowPrefs {
         return Math.max(1, prefs.getInt("retention_days", 7));
     }
 
+    boolean didOnboard() {
+        return prefs.getBoolean("did_onboard", false);
+    }
+
+    int onboardingStep() {
+        return Math.max(0, Math.min(7, prefs.getInt("onboarding_step", 0)));
+    }
+
+    String onboardingRole() {
+        return prefs.getString("onboarding_role", "Builder");
+    }
+
+    String onboardingReferral() {
+        return prefs.getString("onboarding_referral", "");
+    }
+
+    boolean onboardingHasPaidAi() {
+        return prefs.getBoolean("onboarding_has_paid_ai", false);
+    }
+
     boolean isPaused() {
         if (prefs.getBoolean("pause_indefinite", false)) return true;
         long end = prefs.getLong("pause_end_ms", 0L);
@@ -113,6 +133,29 @@ final class DayflowPrefs {
 
     void setRetentionDays(int days) {
         prefs.edit().putInt("retention_days", Math.max(1, Math.min(365, days))).apply();
+    }
+
+    void setDidOnboard(boolean value) {
+        prefs.edit()
+                .putBoolean("did_onboard", value)
+                .putInt("onboarding_step", value ? 0 : onboardingStep())
+                .apply();
+    }
+
+    void setOnboardingStep(int step) {
+        prefs.edit().putInt("onboarding_step", Math.max(0, Math.min(7, step))).apply();
+    }
+
+    void setOnboardingRole(String role) {
+        prefs.edit().putString("onboarding_role", role == null || role.trim().isEmpty() ? "Builder" : role.trim()).apply();
+    }
+
+    void setOnboardingReferral(String referral) {
+        prefs.edit().putString("onboarding_referral", referral == null ? "" : referral.trim()).apply();
+    }
+
+    void setOnboardingHasPaidAi(boolean value) {
+        prefs.edit().putBoolean("onboarding_has_paid_ai", value).apply();
     }
 
     void pauseFor(long durationMs) {
