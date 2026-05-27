@@ -611,36 +611,216 @@ public final class MainActivity extends Activity {
 
     private void renderDailyStandup(List<TimelineCard> cards) {
         final DailyStandupEntry saved = db.fetchDailyStandup(selectedDay);
-        final String draft = saved == null ? standupText(cards) : saved.content;
+        final StandupDraft draft = parseStandupDraft(saved == null ? standupText(cards) : saved.content);
 
         LinearLayout standup = panel();
         standup.addView(text("DAILY STANDUP", 12, Colors.MUTED, true));
         standup.addView(serif("Standup for today", 26, Colors.ACCENT));
         standup.addView(text(saved == null ? "Draft from current timeline." : "Saved " + TimeUtil.timeLabel(saved.updatedAtMs), 13, Colors.MUTED, false));
-        standup.addView(text(draft, 14, Colors.TEXT, false));
 
-        LinearLayout actions = row();
-        Button copy = pillButton("Copy");
-        copy.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { copyText("Dayflow standup", draft); }
-        });
+        LinearLayout topActions = row();
         Button regenerate = smallButton("Regenerate");
         regenerate.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) { regenerateStandup(selectedDay); }
         });
+        Button provider = smallButton("Provider: " + prefs.provider());
+        provider.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.setSettingsSection("Providers");
+                selectedTab = "Settings";
+                refresh();
+            }
+        });
+        topActions.addView(regenerate, new LinearLayout.LayoutParams(0, dp(42), 1));
+        topActions.addView(provider, new LinearLayout.LayoutParams(dp(148), dp(42)));
+        standup.addView(topActions);
+
+        final EditText highlights = standupEditor("Add highlight bullets", draft.highlights, 8);
+        final EditText tasks = standupEditor("Add task bullets", draft.tasks, 6);
+        final EditText blockers = standupEditor("Fill in any blockers", draft.blockers, 4);
+
+        boolean wide = getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density >= 640;
+        if (wide) {
+            LinearLayout cardRow = new LinearLayout(this);
+            cardRow.setOrientation(LinearLayout.HORIZONTAL);
+            cardRow.setGravity(Gravity.TOP);
+            cardRow.setPadding(0, dp(8), 0, dp(12));
+
+            LinearLayout highlightsCard = standupBulletCard("Yesterday's highlights", highlights, null);
+            LinearLayout tasksCard = standupBulletCard("Today's tasks", tasks, blockers);
+            LinearLayout.LayoutParams leftLp = new LinearLayout.LayoutParams(0, -2, 1);
+            leftLp.setMargins(0, 0, dp(8), 0);
+            LinearLayout.LayoutParams rightLp = new LinearLayout.LayoutParams(0, -2, 1);
+            rightLp.setMargins(dp(8), 0, 0, 0);
+            cardRow.addView(highlightsCard, leftLp);
+            cardRow.addView(tasksCard, rightLp);
+            standup.addView(cardRow);
+        } else {
+            LinearLayout highlightsCard = standupBulletCard("Yesterday's highlights", highlights, null);
+            LinearLayout.LayoutParams first = new LinearLayout.LayoutParams(-1, -2);
+            first.setMargins(0, dp(8), 0, dp(12));
+            standup.addView(highlightsCard, first);
+            standup.addView(standupBulletCard("Today's tasks", tasks, blockers), new LinearLayout.LayoutParams(-1, -2));
+        }
+
+        LinearLayout actions = row();
+        Button copy = pillButton("Copy");
+        copy.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                copyText("Dayflow standup", standupTextFromFields(highlights, tasks, blockers));
+            }
+        });
         Button save = smallButton("Save");
         save.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                db.saveDailyStandup(selectedDay, draft);
+                db.saveDailyStandup(selectedDay, standupTextFromFields(highlights, tasks, blockers));
                 setStatus("Standup saved.");
                 refresh();
             }
         });
         actions.addView(copy, new LinearLayout.LayoutParams(0, dp(44), 1));
-        actions.addView(regenerate, new LinearLayout.LayoutParams(dp(126), dp(44)));
         actions.addView(save, new LinearLayout.LayoutParams(dp(82), dp(44)));
         standup.addView(actions);
         content.addView(standup);
+    }
+
+    private LinearLayout standupBulletCard(String title, EditText primary, EditText blockers) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(18), dp(18), dp(18), dp(18));
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{Color.argb(190, 255, 255, 255), Color.argb(235, 255, 253, 248), Color.argb(190, 255, 255, 255)});
+        bg.setStroke(1, 0xffebe6e3);
+        bg.setCornerRadius(dp(12));
+        card.setBackground(bg);
+
+        card.addView(serif(title, 24, Colors.ACCENT));
+        card.addView(primary, new LinearLayout.LayoutParams(-1, -2));
+        card.addView(text("Edit bullets directly, one per line.", 12, Colors.MUTED, false));
+
+        if (blockers != null) {
+            LinearLayout block = new LinearLayout(this);
+            block.setOrientation(LinearLayout.VERTICAL);
+            block.setPadding(dp(12), dp(12), dp(12), dp(12));
+            GradientDrawable blockBg = new GradientDrawable();
+            blockBg.setColor(0xfff7f6f5);
+            blockBg.setStroke(1, 0xffebe6e3);
+            blockBg.setCornerRadius(dp(10));
+            block.setBackground(blockBg);
+            block.addView(text("Blockers", 13, 0xffbd9479, true));
+            block.addView(blockers, new LinearLayout.LayoutParams(-1, -2));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.setMargins(0, dp(14), 0, 0);
+            card.addView(block, lp);
+        }
+        return card;
+    }
+
+    private EditText standupEditor(String hint, String value, int minLines) {
+        EditText edit = new EditText(this);
+        edit.setHint(hint);
+        edit.setText(value == null ? "" : value.trim());
+        edit.setSingleLine(false);
+        edit.setMinLines(minLines);
+        edit.setGravity(Gravity.TOP | Gravity.START);
+        edit.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        edit.setTextColor(Colors.TEXT);
+        edit.setHintTextColor(Colors.MUTED);
+        edit.setTextSize(14);
+        edit.setTypeface(DayflowType.sans(this));
+        edit.setPadding(0, dp(10), 0, dp(10));
+        edit.setBackgroundColor(Color.TRANSPARENT);
+        return edit;
+    }
+
+    private String standupTextFromFields(EditText highlights, EditText tasks, EditText blockers) {
+        return buildStandupText(
+                highlights.getText().toString(),
+                tasks.getText().toString(),
+                blockers.getText().toString());
+    }
+
+    private String buildStandupText(String highlights, String tasks, String blockers) {
+        return "Yesterday's highlights\n"
+                + bulletsOrFallback(highlights, "No focused timeline blocks yet.")
+                + "\nToday's tasks\n"
+                + bulletsOrFallback(tasks, "Continue the highest-signal block from today")
+                + "\nBlockers\n"
+                + bulletsOrFallback(blockers, "No obvious blockers detected yet.");
+    }
+
+    private String bulletsOrFallback(String value, String fallback) {
+        StringBuilder out = new StringBuilder();
+        String source = value == null ? "" : value;
+        for (String line : source.split("\\r?\\n")) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) continue;
+            if (standupSectionFor(trimmed) != null) continue;
+            if (trimmed.startsWith("- ") || trimmed.startsWith("* ") || trimmed.startsWith("• ")) {
+                out.append(trimmed).append("\n");
+            } else {
+                out.append("- ").append(trimmed).append("\n");
+            }
+        }
+        if (out.length() == 0) out.append("- ").append(fallback).append("\n");
+        return out.toString();
+    }
+
+    private StandupDraft parseStandupDraft(String raw) {
+        StandupDraft draft = new StandupDraft();
+        String section = "highlights";
+        boolean foundSection = false;
+        String source = raw == null ? "" : raw.replace('\r', '\n');
+        for (String line : source.split("\\n")) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) continue;
+            String parsedSection = standupSectionFor(trimmed);
+            if (parsedSection != null) {
+                section = parsedSection;
+                foundSection = true;
+                continue;
+            }
+            appendStandupLine(draft, section, trimmed);
+        }
+        if (!foundSection && draft.isEmpty() && !source.trim().isEmpty()) {
+            draft.highlights = source.trim();
+        }
+        if (draft.highlights.trim().isEmpty()) draft.highlights = "- No focused timeline blocks yet.";
+        if (draft.tasks.trim().isEmpty()) draft.tasks = "- Continue the highest-signal block from today";
+        if (draft.blockers.trim().isEmpty()) draft.blockers = "- No obvious blockers detected yet.";
+        return draft;
+    }
+
+    private void appendStandupLine(StandupDraft draft, String section, String line) {
+        if ("tasks".equals(section)) {
+            draft.tasks = appendLine(draft.tasks, line);
+        } else if ("blockers".equals(section)) {
+            draft.blockers = appendLine(draft.blockers, line);
+        } else {
+            draft.highlights = appendLine(draft.highlights, line);
+        }
+    }
+
+    private static String appendLine(String current, String line) {
+        if (current == null || current.trim().isEmpty()) return line;
+        return current + "\n" + line;
+    }
+
+    private String standupSectionFor(String line) {
+        String normalized = line.toLowerCase(Locale.US)
+                .replace('’', '\'')
+                .replace("#", "")
+                .replace("*", "")
+                .replace(":", "")
+                .trim();
+        while (normalized.startsWith("-") || normalized.startsWith("•")) {
+            normalized = normalized.substring(1).trim();
+        }
+        if (normalized.contains("yesterday") && normalized.contains("highlight")) return "highlights";
+        if ((normalized.contains("today") && (normalized.contains("task") || normalized.contains("priorit")))
+                || normalized.equals("tasks")) return "tasks";
+        if (normalized.contains("blocker")) return "blockers";
+        return null;
     }
 
     private void regenerateStandup(final String day) {
@@ -2642,6 +2822,16 @@ public final class MainActivity extends Activity {
     private static final class FrameLayoutParams extends FrameLayout.LayoutParams {
         FrameLayoutParams(int width, int height) {
             super(width, height);
+        }
+    }
+
+    private static final class StandupDraft {
+        String highlights = "";
+        String tasks = "";
+        String blockers = "";
+
+        boolean isEmpty() {
+            return highlights.trim().isEmpty() && tasks.trim().isEmpty() && blockers.trim().isEmpty();
         }
     }
 }
