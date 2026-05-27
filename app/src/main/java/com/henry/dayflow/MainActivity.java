@@ -449,16 +449,26 @@ public final class MainActivity extends Activity {
 
     private void renderOnboardingPermissions() {
         LinearLayout panel = panel();
-        panel.addView(serif("Enable the two Android permissions", 28, Colors.TEXT));
-        panel.addView(text("Usage Access tells Dayflow which app is in front. Screen capture is the Android MediaProjection consent prompt that lets Dayflow save private local frames.", 14, Colors.MUTED, false));
+        panel.addView(serif("Enable Android permissions", 28, Colors.TEXT));
+        panel.addView(text("Usage Access tells Dayflow which app is in front. Screen capture saves private local frames. Accessibility context is optional and adds local window titles/text snippets for richer summaries.", 14, Colors.MUTED, false));
         panel.addView(onboardingInfoCard("images/onboarding/security.png", "Privacy by default", "Screenshots stay on this Android device, retention controls can purge old files, and blocked apps are redacted before storage."));
-        panel.addView(text(appReader.hasUsageAccess() ? "Usage Access: enabled" : "Usage Access: not enabled yet", 14, appReader.hasUsageAccess() ? Colors.ACCENT : Colors.TEXT, false));
+        panel.addView(text((appReader.hasUsageAccess() ? "Usage Access: enabled" : "Usage Access: not enabled yet")
+                + "\nAccessibility context: " + (AccessibilityContextService.isEnabled(this) ? "enabled" : "optional"), 14, appReader.hasUsageAccess() ? Colors.ACCENT : Colors.TEXT, false));
 
         Button usage = pillButton(appReader.hasUsageAccess() ? "Open Usage Access settings" : "Enable Usage Access");
         usage.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) { startActivity(appReader.usageAccessIntent()); }
         });
         panel.addView(usage, new LinearLayout.LayoutParams(-1, dp(44)));
+
+        Button accessibility = smallButton("Optional: enable window context");
+        accessibility.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.setCaptureAccessibilityContext(true);
+                startActivity(AccessibilityContextService.settingsIntent());
+            }
+        });
+        panel.addView(accessibility, new LinearLayout.LayoutParams(-1, dp(42)));
 
         Button capture = pillButton("Start screen capture");
         capture.setOnClickListener(new View.OnClickListener() {
@@ -2347,6 +2357,12 @@ public final class MainActivity extends Activity {
         });
         panel.addView(usage, new LinearLayout.LayoutParams(-1, dp(44)));
 
+        Button accessibility = smallButton(AccessibilityContextService.isEnabled(this) ? "Accessibility context enabled" : "Open accessibility settings");
+        accessibility.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { startActivity(AccessibilityContextService.settingsIntent()); }
+        });
+        panel.addView(accessibility, new LinearLayout.LayoutParams(-1, dp(42)));
+
         Button capture = pillButton("Start screen capture");
         capture.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) { requestScreenCapture(); }
@@ -2429,6 +2445,29 @@ public final class MainActivity extends Activity {
     private void renderSettingsPrivacy(LinearLayout panel) {
         panel.addView(text("Recording privacy", 13, Colors.MUTED, true));
         panel.addView(text("Choose apps Dayflow should hide from screenshots. Blocked apps save a private placeholder so timeline continuity is preserved.", 14, Colors.TEXT, false));
+        panel.addView(text("Window context", 13, Colors.MUTED, true));
+        panel.addView(text(accessibilityContextStatus(), 14, Colors.TEXT, false));
+        final Switch windowContext = new Switch(this);
+        windowContext.setText("Add local window title and visible text snippets to analysis");
+        windowContext.setTextColor(Colors.TEXT);
+        windowContext.setTextSize(13);
+        windowContext.setTypeface(DayflowType.sans(this));
+        windowContext.setChecked(prefs.captureAccessibilityContext());
+        windowContext.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                prefs.setCaptureAccessibilityContext(isChecked);
+                if (!isChecked) AccessibilityContextService.clear(MainActivity.this);
+                setStatus(isChecked ? "Window context enabled locally." : "Window context disabled.");
+            }
+        });
+        panel.addView(windowContext);
+        Button accessibility = smallButton("Open Android accessibility settings");
+        accessibility.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { startActivity(AccessibilityContextService.settingsIntent()); }
+        });
+        panel.addView(accessibility, new LinearLayout.LayoutParams(-1, dp(42)));
+
+        panel.addView(text("Privacy blocklist", 13, Colors.MUTED, true));
         ForegroundAppReader.AppSnapshot current = appReader.currentApp();
         if (current.packageName != null) panel.addView(blockedSwitch(current));
         for (ForegroundAppReader.AppSnapshot app : db.recentApps()) {
@@ -2471,6 +2510,18 @@ public final class MainActivity extends Activity {
             }
         });
         panel.addView(save, new LinearLayout.LayoutParams(-1, dp(44)));
+    }
+
+    private String accessibilityContextStatus() {
+        boolean service = AccessibilityContextService.isEnabled(this);
+        AccessibilityContextService.Snapshot snapshot = AccessibilityContextService.latest(this);
+        String status = "Dayflow setting: " + (prefs.captureAccessibilityContext() ? "on" : "off")
+                + "\nAndroid permission: " + (service ? "enabled" : "not enabled");
+        if (snapshot.hasContext()) {
+            status += "\nLatest: " + TimeUtil.timeLabel(snapshot.updatedAtMs)
+                    + (snapshot.title == null || snapshot.title.trim().isEmpty() ? "" : " · " + snapshot.title);
+        }
+        return status;
     }
 
     private void renderSettingsProviders(LinearLayout panel) {
@@ -2923,7 +2974,7 @@ public final class MainActivity extends Activity {
             case 3: return "Choose local-only, cloud vision, or local vision.";
             case 4: return "Add the exact model details and backup route.";
             case 5: return "Review labels and colors before cards are created.";
-            case 6: return "Grant Usage Access and start Android screen capture.";
+            case 6: return "Grant Usage Access, optional window context, and start capture.";
             case 7: return "Finish setup and enter the Dayflow timeline.";
             default: return "";
         }

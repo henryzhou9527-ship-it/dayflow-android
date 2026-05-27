@@ -20,7 +20,7 @@ import java.util.Map;
 
 final class DayflowDatabase extends SQLiteOpenHelper {
     private static final String DB_NAME = "dayflow.sqlite";
-    private static final int DB_VERSION = 7;
+    private static final int DB_VERSION = 8;
 
     private final Context appContext;
 
@@ -57,6 +57,10 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         if (oldVersion >= 6 && oldVersion < 7) {
             createFeatureTables(db);
         }
+        if (oldVersion < 8) {
+            addColumnIfMissing(db, "screenshots", "window_title", "TEXT");
+            addColumnIfMissing(db, "screenshots", "visible_text", "TEXT");
+        }
     }
 
     private void createCoreTables(SQLiteDatabase db) {
@@ -67,6 +71,8 @@ final class DayflowDatabase extends SQLiteOpenHelper {
                 "file_size INTEGER," +
                 "package_name TEXT," +
                 "app_label TEXT," +
+                "window_title TEXT," +
+                "visible_text TEXT," +
                 "is_deleted INTEGER NOT NULL DEFAULT 0," +
                 "created_at INTEGER NOT NULL)");
         db.execSQL("CREATE INDEX idx_screenshots_captured ON screenshots(captured_at)");
@@ -223,12 +229,18 @@ final class DayflowDatabase extends SQLiteOpenHelper {
     }
 
     synchronized long insertScreenshot(File file, long capturedAtMs, String packageName, String appLabel) {
+        return insertScreenshot(file, capturedAtMs, packageName, appLabel, null, null);
+    }
+
+    synchronized long insertScreenshot(File file, long capturedAtMs, String packageName, String appLabel, String windowTitle, String visibleText) {
         ContentValues values = new ContentValues();
         values.put("captured_at", capturedAtMs);
         values.put("file_path", file.getAbsolutePath());
         values.put("file_size", file.length());
         values.put("package_name", packageName);
         values.put("app_label", appLabel);
+        values.put("window_title", windowTitle);
+        values.put("visible_text", visibleText);
         values.put("created_at", System.currentTimeMillis());
         return getWritableDatabase().insert("screenshots", null, values);
     }
@@ -1159,7 +1171,14 @@ final class DayflowDatabase extends SQLiteOpenHelper {
                 c.getString(c.getColumnIndexOrThrow("file_path")),
                 c.getLong(c.getColumnIndexOrThrow("file_size")),
                 c.getString(c.getColumnIndexOrThrow("package_name")),
-                c.getString(c.getColumnIndexOrThrow("app_label")));
+                c.getString(c.getColumnIndexOrThrow("app_label")),
+                optionalString(c, "window_title"),
+                optionalString(c, "visible_text"));
+    }
+
+    private static String optionalString(Cursor c, String column) {
+        int index = c.getColumnIndex(column);
+        return index < 0 ? null : c.getString(index);
     }
 
     private TimelineCard readCard(Cursor c) {

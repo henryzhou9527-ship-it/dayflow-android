@@ -3,4 +3,5 @@
     <string name="capture_channel_name">Dayflow capture</string>
     <string name="capture_notification_title">Dayflow is watching your day</string>
     <string name="capture_notification_text">Screenshots stay on this phone unless you choose an AI provider.</string>
+    <string name="accessibility_service_description">Adds local window titles and visible text snippets to Dayflow timeline analysis when enabled in Dayflow settings.</string>
 </resources>

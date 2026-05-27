@@ -169,6 +169,10 @@ public final class CaptureService extends Service {
         Image image = null;
         try {
             ForegroundAppReader.AppSnapshot app = appReader.currentApp();
+            AccessibilityContextService.Snapshot window = AccessibilityContextService.latest(this);
+            if (app.packageName == null && window.packageName != null && !window.packageName.trim().isEmpty()) {
+                app = new ForegroundAppReader.AppSnapshot(window.packageName, appReader.labelFor(window.packageName));
+            }
             boolean blocked = db.isBlockedApp(app.packageName);
             image = imageReader.acquireLatestImage();
             if (image == null) return;
@@ -183,7 +187,13 @@ public final class CaptureService extends Service {
             out.close();
             scaled.recycle();
 
-            db.insertScreenshot(file, System.currentTimeMillis(), app.packageName, app.label);
+            db.insertScreenshot(
+                    file,
+                    System.currentTimeMillis(),
+                    app.packageName,
+                    app.label,
+                    window.title,
+                    window.text);
         } catch (Exception ignored) {
         } finally {
             if (image != null) image.close();

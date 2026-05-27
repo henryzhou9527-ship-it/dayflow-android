@@ -7,6 +7,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Captures periodic screenshots through Android MediaProjection.
 - Stores screenshots and timeline data locally in SQLite.
 - Uses Usage Access metadata to identify the foreground app.
+- Can optionally use an Android AccessibilityService as a local-only second signal for window titles and short visible-text snippets, improving analysis without sign-in.
 - Builds 15-minute analysis batches and rewrites cards with a 45-minute lookback window.
 - Supports heuristic analysis, Gemini vision analysis, and Ollama local vision models such as `qwen3-vl:4b`.
 - Chat uses saved timeline cards, journal notes, category totals, and recent chat history, then answers through Gemini or Ollama when configured.
@@ -28,7 +29,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Journal reminders can schedule recurring intention and reflection notifications on selected weekdays, with boot-time rescheduling.
 - Journal uses an original-style two-page board for intentions, notes, long-term goals, reflections, and Dayflow-generated daily summaries.
 - Redacts screenshots for blocked apps while still preserving timeline continuity.
-- Recording/privacy settings include per-app blocking plus capture cadence, batch size, max gap, and card lookback controls.
+- Recording/privacy settings include per-app blocking, optional window-context capture, capture cadence, batch size, max gap, and card lookback controls.
 - Supports timed/indefinite recording pauses and shows saved screenshots plus playable timelapses inside review cards for frame-by-frame context.
 - Review includes Dayflow's focused/neutral/distracted summary bars, cards-to-review progress, last-reviewed state, undo, current-rating chips, and Android-native left/up/right swipe rating.
 - Review cards include an Android-native touch scrubber that mirrors Dayflow's media review behavior with tap-to-play and drag-to-seek interactions.

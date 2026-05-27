@@ -99,7 +99,10 @@ final class HeuristicActivityAnalyzer implements ActivityAnalyzer {
             card.title = AppClassifier.titleFor(group.category, group.appLabel);
             card.summary = summaryFor(group);
             card.detailedSummary = detailedSummaryFor(group);
-            card.metadata = "app=" + safe(group.appLabel) + ";package=" + safe(group.packageName) + ";source=heuristic;";
+            card.metadata = "app=" + safe(group.appLabel)
+                    + ";package=" + safe(group.packageName)
+                    + ";window=" + safe(group.windowTitle)
+                    + ";source=heuristic;";
             cards.add(card);
         }
 
@@ -111,7 +114,8 @@ final class HeuristicActivityAnalyzer implements ActivityAnalyzer {
         Group current = null;
         for (ScreenshotRecord screenshot : screenshots) {
             String category = AppClassifier.categoryFor(screenshot.packageName, screenshot.appLabel);
-            String key = category + "|" + safe(screenshot.packageName) + "|" + safe(screenshot.appLabel);
+            String windowKey = shortContext(screenshot.windowTitle, 80);
+            String key = category + "|" + safe(screenshot.packageName) + "|" + safe(screenshot.appLabel) + "|" + windowKey;
             if (current == null || !current.key.equals(key) || screenshot.capturedAtMs - current.endMs > 2 * TimeUtil.MINUTE) {
                 if (current != null) groups.add(current);
                 current = new Group();
@@ -120,9 +124,11 @@ final class HeuristicActivityAnalyzer implements ActivityAnalyzer {
                 current.packageName = screenshot.packageName;
                 current.appLabel = screenshot.appLabel == null ? "Unknown app" : screenshot.appLabel;
                 current.category = category;
+                current.windowTitle = screenshot.windowTitle;
             }
             current.endMs = screenshot.capturedAtMs;
             current.count++;
+            appendSnippet(current, screenshot.visibleText);
         }
         if (current != null) groups.add(current);
         return groups;
@@ -150,29 +156,57 @@ final class HeuristicActivityAnalyzer implements ActivityAnalyzer {
     private String summaryFor(Group group) {
         String app = group.appLabel == null ? "the foreground app" : group.appLabel;
         if ("Distraction".equals(group.category)) {
-            return "The screen was mainly on " + app + ", likely a distraction block unless it had a clear purpose.";
+            return "The screen was mainly on " + app + contextSuffix(group) + ", likely a distraction block unless it had a clear purpose.";
         }
         if ("Communication".equals(group.category)) {
-            return "A communication block centered on " + app + ".";
+            return "A communication block centered on " + app + contextSuffix(group) + ".";
         }
         if ("Personal".equals(group.category)) {
-            return "Personal or life-admin activity in " + app + ".";
+            return "Personal or life-admin activity in " + app + contextSuffix(group) + ".";
         }
         if ("Idle".equals(group.category)) {
             return "No foreground app was visible in the capture metadata.";
         }
-        return "Focused work appears to be happening in " + app + ".";
+        return "Focused work appears to be happening in " + app + contextSuffix(group) + ".";
     }
 
     private String detailedSummaryFor(Group group) {
+        String context = safe(group.windowTitle).isEmpty() && safe(group.visibleText).isEmpty()
+                ? ""
+                : "\nWindow context: " + shortContext(group.windowTitle, 140)
+                + (safe(group.visibleText).isEmpty() ? "" : "\nVisible text: " + shortContext(group.visibleText, 360));
         return "Captured " + group.count + " screenshots between "
                 + TimeUtil.timeLabel(group.startMs) + " and " + TimeUtil.timeLabel(group.endMs)
                 + ". Android usage metadata identified " + safe(group.appLabel)
-                + " (" + safe(group.packageName) + ") as the foreground context.";
+                + " (" + safe(group.packageName) + ") as the foreground context."
+                + context;
     }
 
     private static String safe(String value) {
         return value == null ? "" : value;
+    }
+
+    private static String contextSuffix(Group group) {
+        String title = shortContext(group.windowTitle, 80);
+        return title.isEmpty() ? "" : " around \"" + title + "\"";
+    }
+
+    private static void appendSnippet(Group group, String value) {
+        String snippet = shortContext(value, 240);
+        if (snippet.isEmpty()) return;
+        if (group.visibleText == null || group.visibleText.isEmpty()) {
+            group.visibleText = snippet;
+            return;
+        }
+        if (!group.visibleText.contains(snippet)) group.visibleText = shortContext(group.visibleText + " | " + snippet, 520);
+    }
+
+    private static String shortContext(String value, int max) {
+        if (value == null) return "";
+        String clean = value.replace('\n', ' ').replace('\r', ' ').trim();
+        while (clean.contains("  ")) clean = clean.replace("  ", " ");
+        if (clean.length() <= max) return clean;
+        return clean.substring(0, Math.max(1, max - 3)).trim() + "...";
     }
 
     private static final class Group {
@@ -183,6 +217,49 @@ final class HeuristicActivityAnalyzer implements ActivityAnalyzer {
         String packageName;
         String appLabel;
         String category;
+        String windowTitle;
+        String visibleText;
+    }
+}
+
+final class AnalyzerPromptContext {
+    private AnalyzerPromptContext() {}
+
+    static String metadataFor(List<ScreenshotRecord> screenshots) {
+        StringBuilder metadata = new StringBuilder();
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        List<String> contexts = new ArrayList<>();
+        for (ScreenshotRecord screenshot : screenshots) {
+            String label = clean(screenshot.appLabel == null ? "Unknown" : screenshot.appLabel, 90);
+            Integer count = counts.get(label);
+            counts.put(label, count == null ? 1 : count + 1);
+
+            String title = clean(screenshot.windowTitle, 120);
+            String text = clean(screenshot.visibleText, 220);
+            if (!title.isEmpty() || !text.isEmpty()) {
+                String line = "- " + label
+                        + (title.isEmpty() ? "" : " · window: " + title)
+                        + (text.isEmpty() ? "" : " · visible: " + text);
+                if (!contexts.contains(line) && contexts.size() < 8) contexts.add(line);
+            }
+        }
+        metadata.append("Apps:\n");
+        for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+            metadata.append("- ").append(entry.getKey()).append(": ").append(entry.getValue()).append(" samples\n");
+        }
+        if (!contexts.isEmpty()) {
+            metadata.append("Window context:\n");
+            for (String context : contexts) metadata.append(context).append("\n");
+        }
+        return metadata.toString();
+    }
+
+    private static String clean(String value, int max) {
+        if (value == null) return "";
+        String cleaned = value.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ').trim();
+        while (cleaned.contains("  ")) cleaned = cleaned.replace("  ", " ");
+        if (cleaned.length() <= max) return cleaned;
+        return cleaned.substring(0, Math.max(1, max - 3)).trim() + "...";
     }
 }
 
@@ -223,16 +300,7 @@ final class GeminiActivityAnalyzer implements ActivityAnalyzer {
     private String promptFor(List<ScreenshotRecord> screenshots, List<TimelineCard> existingCards) {
         ScreenshotRecord first = screenshots.get(0);
         ScreenshotRecord last = screenshots.get(screenshots.size() - 1);
-        StringBuilder metadata = new StringBuilder();
-        Map<String, Integer> counts = new LinkedHashMap<>();
-        for (ScreenshotRecord screenshot : screenshots) {
-            String label = screenshot.appLabel == null ? "Unknown" : screenshot.appLabel;
-            Integer count = counts.get(label);
-            counts.put(label, count == null ? 1 : count + 1);
-        }
-        for (Map.Entry<String, Integer> entry : counts.entrySet()) {
-            metadata.append("- ").append(entry.getKey()).append(": ").append(entry.getValue()).append(" samples\n");
-        }
+        String metadata = AnalyzerPromptContext.metadataFor(screenshots);
 
         String language = prefs.outputLanguageOverride();
         String languageInstruction = language == null || language.trim().isEmpty()
@@ -372,16 +440,7 @@ final class OllamaActivityAnalyzer implements ActivityAnalyzer {
     private String promptFor(List<ScreenshotRecord> screenshots, List<TimelineCard> existingCards) {
         ScreenshotRecord first = screenshots.get(0);
         ScreenshotRecord last = screenshots.get(screenshots.size() - 1);
-        StringBuilder metadata = new StringBuilder();
-        Map<String, Integer> counts = new LinkedHashMap<>();
-        for (ScreenshotRecord screenshot : screenshots) {
-            String label = screenshot.appLabel == null ? "Unknown" : screenshot.appLabel;
-            Integer count = counts.get(label);
-            counts.put(label, count == null ? 1 : count + 1);
-        }
-        for (Map.Entry<String, Integer> entry : counts.entrySet()) {
-            metadata.append("- ").append(entry.getKey()).append(": ").append(entry.getValue()).append(" samples\n");
-        }
+        String metadata = AnalyzerPromptContext.metadataFor(screenshots);
 
         String language = prefs.outputLanguageOverride();
         String languageInstruction = language == null || language.trim().isEmpty()

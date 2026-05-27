@@ -76,6 +76,10 @@ final class DayflowPrefs {
         return prefs.getBoolean("show_daily_goal_popups", true);
     }
 
+    boolean captureAccessibilityContext() {
+        return prefs.getBoolean("capture_accessibility_context", false);
+    }
+
     int retentionDays() {
         return Math.max(1, prefs.getInt("retention_days", 7));
     }
@@ -230,6 +234,10 @@ final class DayflowPrefs {
 
     void setShowDailyGoalPopups(boolean value) {
         prefs.edit().putBoolean("show_daily_goal_popups", value).apply();
+    }
+
+    void setCaptureAccessibilityContext(boolean value) {
+        prefs.edit().putBoolean("capture_accessibility_context", value).apply();
     }
 
     void setRetentionDays(int days) {
