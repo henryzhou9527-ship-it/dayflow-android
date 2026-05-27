@@ -11,6 +11,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Falls back to a local heuristic analyzer when no Gemini API key is configured.
 - Adds journal entries, daily goals, review ratings, editable categories, storage stats, per-app privacy blocking, day deletion, and reprocessing controls.
 - Redacts screenshots for blocked apps while still preserving timeline continuity.
+- Supports timed/indefinite recording pauses and shows saved screenshots inside review cards for frame-by-frame context.
 - Exports the current day timeline as Markdown.
 - Keeps the Dayflow visual language: bundled Dayflow fonts/assets, warm cream/orange gradients, serif headings, soft white panels, compact timeline cards, heatmaps, and productivity dashboards.
 

@@ -52,6 +52,32 @@ final class DayflowPrefs {
         return Math.max(1, prefs.getInt("retention_days", 7));
     }
 
+    boolean isPaused() {
+        if (prefs.getBoolean("pause_indefinite", false)) return true;
+        long end = prefs.getLong("pause_end_ms", 0L);
+        if (end <= 0L) return false;
+        if (System.currentTimeMillis() < end) return true;
+        resumeRecording();
+        return false;
+    }
+
+    long pauseEndMs() {
+        return prefs.getLong("pause_end_ms", 0L);
+    }
+
+    boolean isPausedIndefinitely() {
+        return prefs.getBoolean("pause_indefinite", false);
+    }
+
+    String pauseLabel() {
+        if (isPausedIndefinitely()) return "Paused indefinitely";
+        long end = pauseEndMs();
+        if (end <= 0L) return "Recording active";
+        long remaining = Math.max(0L, end - System.currentTimeMillis());
+        if (remaining <= 0L) return "Recording active";
+        return "Paused · resumes in " + TimeUtil.shortDuration(remaining);
+    }
+
     void setCloudAnalyzer(boolean enabled) {
         prefs.edit().putBoolean("use_cloud_analyzer", enabled).apply();
     }
@@ -70,6 +96,27 @@ final class DayflowPrefs {
 
     void setRetentionDays(int days) {
         prefs.edit().putInt("retention_days", Math.max(1, Math.min(365, days))).apply();
+    }
+
+    void pauseFor(long durationMs) {
+        prefs.edit()
+                .putLong("pause_end_ms", System.currentTimeMillis() + Math.max(TimeUtil.MINUTE, durationMs))
+                .putBoolean("pause_indefinite", false)
+                .apply();
+    }
+
+    void pauseIndefinitely() {
+        prefs.edit()
+                .putLong("pause_end_ms", 0L)
+                .putBoolean("pause_indefinite", true)
+                .apply();
+    }
+
+    void resumeRecording() {
+        prefs.edit()
+                .putLong("pause_end_ms", 0L)
+                .putBoolean("pause_indefinite", false)
+                .apply();
     }
 
     void setGeminiApiKey(String key) {

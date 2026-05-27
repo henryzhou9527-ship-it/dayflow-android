@@ -249,6 +249,19 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         }
     }
 
+    synchronized List<ScreenshotRecord> screenshotsInRange(long startMs, long endMs, int limit) {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT * FROM screenshots WHERE is_deleted = 0 AND captured_at >= ? AND captured_at <= ? ORDER BY captured_at ASC LIMIT ?",
+                new String[]{String.valueOf(startMs), String.valueOf(endMs), String.valueOf(Math.max(1, limit))});
+        try {
+            List<ScreenshotRecord> records = new ArrayList<>();
+            while (c.moveToNext()) records.add(readScreenshot(c));
+            return records;
+        } finally {
+            c.close();
+        }
+    }
+
     synchronized void saveObservations(long batchId, List<TimelineCard> cards) {
         SQLiteDatabase db = getWritableDatabase();
         db.beginTransaction();

@@ -59,7 +59,7 @@ public final class CaptureService extends Service {
     private final Runnable captureTick = new Runnable() {
         @Override
         public void run() {
-            captureLatestImage();
+            if (!prefs.isPaused()) captureLatestImage();
             purgeIfNeeded();
             if (running) handler.postDelayed(this, prefs.screenshotIntervalMs());
         }
@@ -68,6 +68,10 @@ public final class CaptureService extends Service {
     private final Runnable analysisTick = new Runnable() {
         @Override
         public void run() {
+            if (prefs.isPaused()) {
+                if (running) handler.postDelayed(this, TimeUtil.MINUTE);
+                return;
+            }
             new Thread(new Runnable() {
                 @Override
                 public void run() {
@@ -302,7 +306,7 @@ public final class CaptureService extends Service {
         return builder
                 .setSmallIcon(android.R.drawable.presence_online)
                 .setContentTitle(getString(R.string.capture_notification_title))
-                .setContentText(getString(R.string.capture_notification_text))
+                .setContentText(prefs.isPaused() ? prefs.pauseLabel() : getString(R.string.capture_notification_text))
                 .setOngoing(true)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent)
                 .build();

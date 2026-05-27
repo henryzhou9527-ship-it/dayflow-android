@@ -8,6 +8,8 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.media.projection.MediaProjectionManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -20,6 +22,7 @@ import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Space;
@@ -114,6 +117,14 @@ public final class MainActivity extends Activity {
         });
         header.addView(stop, new LinearLayout.LayoutParams(dp(42), dp(42)));
 
+        Button pause = iconButton("Ⅱ");
+        pause.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                pauseRecording(TimeUtil.MINUTE * 15);
+            }
+        });
+        header.addView(pause, new LinearLayout.LayoutParams(dp(42), dp(42)));
+
         tabRow = new LinearLayout(this);
         tabRow.setOrientation(LinearLayout.HORIZONTAL);
         HorizontalScrollView tabsScroll = new HorizontalScrollView(this);
@@ -150,6 +161,13 @@ public final class MainActivity extends Activity {
     }
 
     private void renderTimeline(List<TimelineCard> cards, DashboardMetrics metrics) {
+        if (prefs.isPaused()) {
+            LinearLayout paused = panel();
+            paused.addView(serif(prefs.pauseLabel(), 24, Colors.TEXT));
+            paused.addView(text("Screenshots and analysis are temporarily stopped. Resume from Settings when you are ready.", 14, Colors.MUTED, false));
+            content.addView(paused);
+        }
+
         LinearLayout actions = row();
         Button previous = smallButton("‹");
         previous.setOnClickListener(new View.OnClickListener() {
@@ -300,6 +318,7 @@ public final class MainActivity extends Activity {
             p.addView(text(TimeUtil.timeLabel(card.startMs) + " - " + TimeUtil.timeLabel(card.endMs) + " · " + card.category, 12, Colors.MUTED, true));
             p.addView(serif(card.title, 24, Colors.TEXT));
             p.addView(text(card.detailedSummary == null ? card.summary : card.detailedSummary, 14, Colors.TEXT, false));
+            addReviewFrames(p, card);
             LinearLayout row = row();
             row.addView(ratingButton(card, "Focus"), new LinearLayout.LayoutParams(0, dp(40), 1));
             row.addView(ratingButton(card, "Neutral"), new LinearLayout.LayoutParams(0, dp(40), 1));
@@ -436,6 +455,46 @@ public final class MainActivity extends Activity {
         });
         panel.addView(analyze, new LinearLayout.LayoutParams(-1, dp(44)));
 
+        panel.addView(text("Pause recording", 13, Colors.MUTED, true));
+        panel.addView(text(prefs.pauseLabel(), 14, Colors.TEXT, false));
+        LinearLayout pauseShort = row();
+        Button pause15 = smallButton("15m");
+        pause15.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { pauseRecording(15 * TimeUtil.MINUTE); }
+        });
+        Button pause30 = smallButton("30m");
+        pause30.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { pauseRecording(30 * TimeUtil.MINUTE); }
+        });
+        Button pause60 = smallButton("1h");
+        pause60.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { pauseRecording(TimeUtil.HOUR); }
+        });
+        pauseShort.addView(pause15, new LinearLayout.LayoutParams(0, dp(40), 1));
+        pauseShort.addView(pause30, new LinearLayout.LayoutParams(0, dp(40), 1));
+        pauseShort.addView(pause60, new LinearLayout.LayoutParams(0, dp(40), 1));
+        panel.addView(pauseShort);
+        LinearLayout pauseLong = row();
+        Button indefinite = smallButton("Indefinite");
+        indefinite.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.pauseIndefinitely();
+                setStatus("Recording paused indefinitely.");
+                refresh();
+            }
+        });
+        Button resume = pillButton("Resume recording");
+        resume.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.resumeRecording();
+                setStatus("Recording resumed.");
+                refresh();
+            }
+        });
+        pauseLong.addView(indefinite, new LinearLayout.LayoutParams(dp(118), dp(40)));
+        pauseLong.addView(resume, new LinearLayout.LayoutParams(0, dp(40), 1));
+        panel.addView(pauseLong);
+
         Button reprocess = pillButton("Reprocess selected day");
         reprocess.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
@@ -569,6 +628,50 @@ public final class MainActivity extends Activity {
         return button;
     }
 
+    private void addReviewFrames(LinearLayout panel, TimelineCard card) {
+        List<ScreenshotRecord> frames = db.screenshotsInRange(
+                card.startMs - TimeUtil.MINUTE,
+                card.endMs + TimeUtil.MINUTE,
+                4);
+        if (frames.isEmpty()) {
+            panel.addView(text("No screenshots saved for this card.", 12, Colors.MUTED, false));
+            return;
+        }
+
+        HorizontalScrollView scroll = new HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout strip = new LinearLayout(this);
+        strip.setOrientation(LinearLayout.HORIZONTAL);
+        strip.setPadding(0, dp(8), 0, dp(8));
+        scroll.addView(strip, new HorizontalScrollView.LayoutParams(-2, dp(118)));
+
+        for (ScreenshotRecord frame : frames) {
+            Bitmap bitmap = previewBitmap(frame.filePath);
+            if (bitmap == null) continue;
+            ImageView image = new ImageView(this);
+            image.setImageBitmap(bitmap);
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            image.setBackgroundColor(Colors.CARD_ALT);
+            image.setContentDescription(frame.appLabel == null ? "Dayflow screenshot" : frame.appLabel + " screenshot");
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(148), dp(96));
+            lp.setMargins(0, 0, dp(8), 0);
+            strip.addView(image, lp);
+        }
+
+        if (strip.getChildCount() > 0) panel.addView(scroll);
+    }
+
+    private Bitmap previewBitmap(String filePath) {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(filePath, bounds);
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null;
+        BitmapFactory.Options opts = new BitmapFactory.Options();
+        int longest = Math.max(bounds.outWidth, bounds.outHeight);
+        opts.inSampleSize = Math.max(1, longest / 420);
+        return BitmapFactory.decodeFile(filePath, opts);
+    }
+
     private String reviewLine(String rating, Map<String, Long> reviewed) {
         Long value = reviewed.get(rating);
         return rating + ": " + TimeUtil.shortDuration(value == null ? 0 : value);
@@ -697,6 +800,12 @@ public final class MainActivity extends Activity {
         MediaProjectionManager manager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
         if (manager == null) return;
         startActivityForResult(manager.createScreenCaptureIntent(), REQ_MEDIA_PROJECTION);
+    }
+
+    private void pauseRecording(long durationMs) {
+        prefs.pauseFor(durationMs);
+        setStatus("Recording paused for " + TimeUtil.shortDuration(durationMs) + ".");
+        refresh();
     }
 
     private void maybeRequestNotifications() {
