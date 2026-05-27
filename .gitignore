@@ -1,0 +1,18 @@
+.gradle/
+build/
+app/build/
+local.properties
+*.iml
+.idea/
+
+# Build artifacts stay local unless published as a release.
+*.apk
+*.aab
+
+# Local capture/database output if the app is run from an IDE.
+recordings/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+.DS_Store

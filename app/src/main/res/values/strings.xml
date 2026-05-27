@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">Dayflow</string>
+    <string name="capture_channel_name">Dayflow capture</string>
+    <string name="capture_notification_title">Dayflow is watching your day</string>
+    <string name="capture_notification_text">Screenshots stay on this phone unless you choose an AI provider.</string>
+</resources>
