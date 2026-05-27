@@ -842,6 +842,7 @@ public final class MainActivity extends Activity {
             LinearLayout p = panel();
             p.addView(text(TimeUtil.timeLabel(card.startMs) + " - " + TimeUtil.timeLabel(card.endMs) + " · " + card.category, 12, Colors.MUTED, true));
             p.addView(serif(card.title, 24, Colors.TEXT));
+            addReviewScrubber(p, card);
             p.addView(text(card.detailedSummary == null ? card.summary : card.detailedSummary, 14, Colors.TEXT, false));
             addReviewFrames(p, card);
             addTimelapseControls(p, card);
@@ -1950,6 +1951,19 @@ public final class MainActivity extends Activity {
             }
         });
         return button;
+    }
+
+    private void addReviewScrubber(LinearLayout panel, TimelineCard card) {
+        List<ScreenshotRecord> frames = db.screenshotsInRange(
+                card.startMs - TimeUtil.MINUTE,
+                card.endMs + TimeUtil.MINUTE,
+                90);
+        if (frames.isEmpty()) return;
+        TimelineReviewScrubberView scrubber = new TimelineReviewScrubberView(this);
+        scrubber.setData(card, frames);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(220));
+        lp.setMargins(0, dp(10), 0, dp(12));
+        panel.addView(scrubber, lp);
     }
 
     private void addReviewFrames(LinearLayout panel, TimelineCard card) {
