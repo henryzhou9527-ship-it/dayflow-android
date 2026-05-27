@@ -698,6 +698,11 @@ public final class MainActivity extends Activity {
         content.addView(weekly, new LinearLayout.LayoutParams(-1, dp(520)));
         addGap(14);
 
+        WeeklyContextChartsView contextCharts = new WeeklyContextChartsView(this);
+        contextCharts.setCards(start, cards);
+        content.addView(contextCharts, new LinearLayout.LayoutParams(-1, dp(330)));
+        addGap(14);
+
         WeeklyTreemapView treemap = new WeeklyTreemapView(this);
         treemap.setCards(cards, previousCards);
         content.addView(treemap, new LinearLayout.LayoutParams(-1, dp(430)));
