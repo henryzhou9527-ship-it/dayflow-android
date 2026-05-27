@@ -138,6 +138,26 @@ final class DayflowPrefs {
         return notice;
     }
 
+    CaptureHealth captureHealth() {
+        CaptureHealth health = new CaptureHealth();
+        health.serviceStartedAtMs = prefs.getLong("capture_service_started_at", 0L);
+        health.serviceStoppedAtMs = prefs.getLong("capture_service_stopped_at", 0L);
+        health.projectionStartedAtMs = prefs.getLong("capture_projection_started_at", 0L);
+        health.lastHeartbeatAtMs = prefs.getLong("capture_last_heartbeat_at", 0L);
+        health.lastCaptureAttemptAtMs = prefs.getLong("capture_last_attempt_at", 0L);
+        health.lastCaptureAtMs = prefs.getLong("capture_last_success_at", 0L);
+        health.lastCaptureErrorAtMs = prefs.getLong("capture_last_error_at", 0L);
+        health.lastFileBytes = prefs.getLong("capture_last_file_bytes", 0L);
+        health.captureWidth = prefs.getInt("capture_width", 0);
+        health.captureHeight = prefs.getInt("capture_height", 0);
+        health.successCount = prefs.getInt("capture_success_count", 0);
+        health.lastAppLabel = prefs.getString("capture_last_app_label", "");
+        health.lastPackageName = prefs.getString("capture_last_package_name", "");
+        health.lastError = prefs.getString("capture_last_error", "");
+        health.stopReason = prefs.getString("capture_stop_reason", "");
+        return health;
+    }
+
     boolean didOnboard() {
         return prefs.getBoolean("did_onboard", false);
     }
@@ -300,6 +320,66 @@ final class DayflowPrefs {
 
     void dismissAnalysisNotice() {
         prefs.edit().putLong("analysis_notice_dismissed_at", System.currentTimeMillis()).apply();
+    }
+
+    void markCaptureServiceStarted() {
+        long now = System.currentTimeMillis();
+        prefs.edit()
+                .putLong("capture_service_started_at", now)
+                .putLong("capture_last_heartbeat_at", now)
+                .putString("capture_stop_reason", "")
+                .apply();
+    }
+
+    void markCaptureHeartbeat() {
+        prefs.edit().putLong("capture_last_heartbeat_at", System.currentTimeMillis()).apply();
+    }
+
+    void markCaptureProjectionStarted(int width, int height) {
+        long now = System.currentTimeMillis();
+        prefs.edit()
+                .putLong("capture_projection_started_at", now)
+                .putLong("capture_last_heartbeat_at", now)
+                .putInt("capture_width", Math.max(0, width))
+                .putInt("capture_height", Math.max(0, height))
+                .putString("capture_stop_reason", "")
+                .apply();
+    }
+
+    void markCaptureAttempt() {
+        long now = System.currentTimeMillis();
+        prefs.edit()
+                .putLong("capture_last_attempt_at", now)
+                .putLong("capture_last_heartbeat_at", now)
+                .apply();
+    }
+
+    void markCaptureSuccess(String packageName, String appLabel, long fileBytes) {
+        long now = System.currentTimeMillis();
+        prefs.edit()
+                .putLong("capture_last_success_at", now)
+                .putLong("capture_last_heartbeat_at", now)
+                .putLong("capture_last_file_bytes", Math.max(0L, fileBytes))
+                .putString("capture_last_package_name", packageName == null ? "" : packageName)
+                .putString("capture_last_app_label", appLabel == null ? "" : appLabel)
+                .putInt("capture_success_count", Math.max(0, prefs.getInt("capture_success_count", 0)) + 1)
+                .apply();
+    }
+
+    void markCaptureError(String message) {
+        long now = System.currentTimeMillis();
+        prefs.edit()
+                .putLong("capture_last_error_at", now)
+                .putLong("capture_last_heartbeat_at", now)
+                .putString("capture_last_error", message == null ? "" : message.trim())
+                .apply();
+    }
+
+    void markCaptureStopped(String reason) {
+        prefs.edit()
+                .putLong("capture_service_stopped_at", System.currentTimeMillis())
+                .putString("capture_stop_reason", reason == null ? "" : reason.trim())
+                .apply();
     }
 
     void setDidOnboard(boolean value) {

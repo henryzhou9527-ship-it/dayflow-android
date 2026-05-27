@@ -204,6 +204,7 @@ public final class MainActivity extends Activity {
             return;
         }
         addAnalysisNoticeIfNeeded();
+        addCaptureHealthNoticeIfNeeded();
         if ("Timeline".equals(selectedTab)) renderTimeline(dayCards, metrics);
         if ("Daily".equals(selectedTab)) renderDaily(dayCards);
         if ("Weekly".equals(selectedTab)) renderWeekly();
@@ -252,6 +253,45 @@ public final class MainActivity extends Activity {
         });
         actions.addView(details, new LinearLayout.LayoutParams(0, dp(42), 1));
         actions.addView(dismiss, new LinearLayout.LayoutParams(dp(104), dp(42)));
+        panel.addView(actions);
+        content.addView(panel);
+        addGap(8);
+    }
+
+    private void addCaptureHealthNoticeIfNeeded() {
+        final CaptureHealth health = prefs.captureHealth();
+        if (prefs.isPaused()) return;
+        boolean userStopped = "Stopped by user".equals(health.stopReason);
+        if (userStopped) return;
+        boolean stale = health.projectionStartedAtMs > 0 && !health.recentlyAlive(prefs.screenshotIntervalMs()) && !userStopped;
+        boolean error = health.hasNewerError();
+        if (!stale && !error) return;
+
+        LinearLayout panel = panel();
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(255, 245, 242));
+        bg.setStroke(1, Color.rgb(255, 150, 130));
+        bg.setCornerRadius(dp(8));
+        panel.setBackground(bg);
+        panel.addView(text("Recording needs attention", 13, Colors.DISTRACTION, true));
+        panel.addView(text(error ? "Latest capture error: " + shortText(health.lastError, 140) : "The recorder has not sent a recent heartbeat.", 14, Colors.TEXT, false));
+        panel.addView(text(captureHealthSummary(health), 12, Colors.MUTED, false));
+
+        LinearLayout actions = row();
+        Button start = pillButton("Restart capture");
+        start.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { requestScreenCapture(); }
+        });
+        Button settings = smallButton("Details");
+        settings.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.setSettingsSection("Storage");
+                selectedTab = "Settings";
+                refresh();
+            }
+        });
+        actions.addView(start, new LinearLayout.LayoutParams(0, dp(42), 1));
+        actions.addView(settings, new LinearLayout.LayoutParams(dp(96), dp(42)));
         panel.addView(actions);
         content.addView(panel);
         addGap(8);
@@ -2381,6 +2421,7 @@ public final class MainActivity extends Activity {
         panel.addView(text("Profile", 13, Colors.MUTED, true));
         panel.addView(text("Local Android build · " + appVersionLabel(), 14, Colors.TEXT, false));
         panel.addView(text("Role: " + prefs.onboardingRole() + "\nProvider: " + prefs.provider() + "\nBackup: " + prefs.backupProvider(), 14, Colors.MUTED, false));
+        panel.addView(text("Recording: " + captureHealthHeadline(prefs.captureHealth()), 14, Colors.TEXT, false));
 
         Button setup = pillButton("Run first-run setup again");
         setup.setOnClickListener(new View.OnClickListener() {
@@ -2430,7 +2471,7 @@ public final class MainActivity extends Activity {
 
     private void renderSettingsStorage(LinearLayout panel) {
         panel.addView(text("Recording status", 13, Colors.MUTED, true));
-        panel.addView(text((appReader.hasUsageAccess() ? "Usage access: granted" : "Usage access: missing") + "\nRecorder: " + (prefs.isPaused() ? prefs.pauseLabel() : "Ready"), 14, Colors.TEXT, false));
+        panel.addView(text((appReader.hasUsageAccess() ? "Usage access: granted" : "Usage access: missing") + "\n" + captureHealthDetails(prefs.captureHealth()), 14, Colors.TEXT, false));
 
         panel.addView(text("Disk usage", 13, Colors.MUTED, true));
         StorageStats stats = db.storageStats();
@@ -4226,6 +4267,47 @@ public final class MainActivity extends Activity {
         if (value >= 1024L * 1024L) return String.format(Locale.US, "%.1f MB", value / (1024f * 1024f));
         if (value >= 1024L) return String.format(Locale.US, "%.1f KB", value / 1024f);
         return value + " B";
+    }
+
+    private String captureHealthHeadline(CaptureHealth health) {
+        if (prefs.isPaused()) return prefs.pauseLabel();
+        if (health.hasNewerError()) return "Needs attention";
+        if (health.recentlyAlive(prefs.screenshotIntervalMs())) {
+            if (health.lastCaptureAtMs > 0) return "Active · last capture " + TimeUtil.timeLabel(health.lastCaptureAtMs);
+            return "Active · waiting for first frame";
+        }
+        if (health.serviceStoppedAtMs >= health.serviceStartedAtMs && health.serviceStoppedAtMs > 0) {
+            return "Stopped · " + TimeUtil.timeLabel(health.serviceStoppedAtMs);
+        }
+        if (health.serviceStartedAtMs > 0) return "Stale · restart capture";
+        return "Not started";
+    }
+
+    private String captureHealthDetails(CaptureHealth health) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Recorder: ").append(captureHealthHeadline(health));
+        if (health.serviceStartedAtMs > 0) sb.append("\nStarted: ").append(TimeUtil.timeLabel(health.serviceStartedAtMs));
+        if (health.projectionStartedAtMs > 0) sb.append("\nScreen session: ").append(TimeUtil.timeLabel(health.projectionStartedAtMs));
+        if (health.lastHeartbeatAtMs > 0) sb.append("\nHeartbeat: ").append(TimeUtil.timeLabel(health.lastHeartbeatAtMs));
+        if (health.lastCaptureAtMs > 0) {
+            sb.append("\nLast capture: ").append(TimeUtil.timeLabel(health.lastCaptureAtMs));
+            if (health.lastAppLabel != null && !health.lastAppLabel.trim().isEmpty()) sb.append(" · ").append(health.lastAppLabel);
+            if (health.lastFileBytes > 0) sb.append(" · ").append(bytes(health.lastFileBytes));
+        }
+        if (health.captureWidth > 0 && health.captureHeight > 0) {
+            sb.append("\nResolution: ").append(health.captureWidth).append(" x ").append(health.captureHeight);
+        }
+        sb.append("\nSaved frames this service run: ").append(health.successCount);
+        if (health.hasNewerError()) sb.append("\nLatest error: ").append(shortText(health.lastError, 180));
+        if (health.stopReason != null && !health.stopReason.trim().isEmpty()) sb.append("\nStop reason: ").append(health.stopReason);
+        return sb.toString();
+    }
+
+    private String captureHealthSummary(CaptureHealth health) {
+        StringBuilder sb = new StringBuilder(captureHealthHeadline(health));
+        if (health.lastCaptureAtMs > 0) sb.append(" · last capture ").append(TimeUtil.timeLabel(health.lastCaptureAtMs));
+        if (health.lastHeartbeatAtMs > 0) sb.append(" · heartbeat ").append(TimeUtil.timeLabel(health.lastHeartbeatAtMs));
+        return sb.toString();
     }
 
     private String appVersionLabel() {

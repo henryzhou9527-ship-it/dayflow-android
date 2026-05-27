@@ -8,6 +8,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Stores screenshots and timeline data locally in SQLite.
 - Uses Usage Access metadata to identify the foreground app.
 - Can optionally use an Android AccessibilityService as a local-only second signal for window titles and short visible-text snippets, improving analysis without sign-in.
+- Tracks recording health locally, including service heartbeat, last successful frame, capture errors, active resolution, and restart prompts when the recorder needs attention.
 - Builds 15-minute analysis batches and rewrites cards with a 45-minute lookback window.
 - Supports heuristic analysis, Gemini vision analysis, and Ollama local vision models such as `qwen3-vl:4b`.
 - Chat uses saved timeline cards, journal notes, category totals, and recent chat history, then answers through Gemini or Ollama when configured.

@@ -59,6 +59,7 @@ public final class CaptureService extends Service {
     private final Runnable captureTick = new Runnable() {
         @Override
         public void run() {
+            prefs.markCaptureHeartbeat();
             if (!prefs.isPaused()) captureLatestImage();
             purgeIfNeeded();
             if (running) handler.postDelayed(this, prefs.screenshotIntervalMs());
@@ -96,6 +97,7 @@ public final class CaptureService extends Service {
         prefs = new DayflowPrefs(this);
         appReader = new ForegroundAppReader(this);
         analysisEngine = new AnalysisEngine(this);
+        prefs.markCaptureServiceStarted();
         createNotificationChannel();
     }
 
@@ -133,18 +135,28 @@ public final class CaptureService extends Service {
     private void startProjection(int resultCode, Intent resultData) {
         stopProjectionOnly();
         MediaProjectionManager manager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
-        if (manager == null) return;
+        if (manager == null) {
+            prefs.markCaptureError("MediaProjectionManager unavailable");
+            return;
+        }
         projection = manager.getMediaProjection(resultCode, resultData);
-        if (projection == null) return;
+        if (projection == null) {
+            prefs.markCaptureError("Screen capture permission result was unavailable");
+            return;
+        }
         projection.registerCallback(projectionCallback, handler);
 
         DisplayMetrics metrics = new DisplayMetrics();
         WindowManager windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
-        if (windowManager == null) return;
+        if (windowManager == null) {
+            prefs.markCaptureError("Window manager unavailable");
+            return;
+        }
         windowManager.getDefaultDisplay().getRealMetrics(metrics);
         captureWidth = metrics.widthPixels;
         captureHeight = metrics.heightPixels;
         densityDpi = metrics.densityDpi;
+        prefs.markCaptureProjectionStarted(captureWidth, captureHeight);
 
         imageReader = ImageReader.newInstance(captureWidth, captureHeight, PixelFormat.RGBA_8888, 2);
         virtualDisplay = projection.createVirtualDisplay(
@@ -158,6 +170,7 @@ public final class CaptureService extends Service {
                 handler);
 
         running = true;
+        refreshNotification();
         handler.removeCallbacks(captureTick);
         handler.removeCallbacks(analysisTick);
         handler.postDelayed(captureTick, 800);
@@ -165,7 +178,11 @@ public final class CaptureService extends Service {
     }
 
     private void captureLatestImage() {
-        if (imageReader == null) return;
+        prefs.markCaptureAttempt();
+        if (imageReader == null) {
+            prefs.markCaptureError("Image reader is not ready");
+            return;
+        }
         Image image = null;
         try {
             ForegroundAppReader.AppSnapshot app = appReader.currentApp();
@@ -194,7 +211,11 @@ public final class CaptureService extends Service {
                     app.label,
                     window.title,
                     window.text);
-        } catch (Exception ignored) {
+            prefs.markCaptureSuccess(app.packageName, app.label, file.length());
+            refreshNotification();
+        } catch (Exception error) {
+            prefs.markCaptureError(error.getClass().getSimpleName() + ": " + error.getMessage());
+            refreshNotification();
         } finally {
             if (image != null) image.close();
         }
@@ -271,6 +292,8 @@ public final class CaptureService extends Service {
         handler.removeCallbacks(captureTick);
         handler.removeCallbacks(analysisTick);
         stopProjectionOnly();
+        prefs.markCaptureStopped(stopSelf ? "Stopped by user" : "Projection stopped");
+        refreshNotification();
         if (stopSelf) {
             stopForeground(true);
             stopSelf();
@@ -316,10 +339,31 @@ public final class CaptureService extends Service {
         return builder
                 .setSmallIcon(android.R.drawable.presence_online)
                 .setContentTitle(getString(R.string.capture_notification_title))
-                .setContentText(prefs.isPaused() ? prefs.pauseLabel() : getString(R.string.capture_notification_text))
+                .setContentText(captureNotificationText())
                 .setOngoing(true)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent)
                 .build();
+    }
+
+    private String captureNotificationText() {
+        if (prefs.isPaused()) return prefs.pauseLabel();
+        CaptureHealth health = prefs.captureHealth();
+        if (health.hasNewerError()) return "Capture needs attention: " + shortText(health.lastError, 48);
+        if (health.lastCaptureAtMs > 0) return "Last capture " + TimeUtil.timeLabel(health.lastCaptureAtMs) + ". Screenshots stay local.";
+        return getString(R.string.capture_notification_text);
+    }
+
+    private void refreshNotification() {
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager != null) manager.notify(NOTIFICATION_ID, buildNotification());
+    }
+
+    private static String shortText(String value, int max) {
+        if (value == null) return "";
+        String clean = value.replace('\n', ' ').replace('\r', ' ').trim();
+        while (clean.contains("  ")) clean = clean.replace("  ", " ");
+        if (clean.length() <= max) return clean;
+        return clean.substring(0, Math.max(1, max - 3)).trim() + "...";
     }
 
     private void createNotificationChannel() {
