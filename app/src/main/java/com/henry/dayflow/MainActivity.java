@@ -703,6 +703,11 @@ public final class MainActivity extends Activity {
         content.addView(weekly, new LinearLayout.LayoutParams(-1, dp(520)));
         addGap(14);
 
+        WeeklyOverviewFooterView overviewFooter = new WeeklyOverviewFooterView(this);
+        overviewFooter.setCards(start, cards);
+        content.addView(overviewFooter, new LinearLayout.LayoutParams(-1, dp(158)));
+        addGap(14);
+
         WeeklyWorkflowView workflow = new WeeklyWorkflowView(this);
         workflow.setCards(start, cards);
         content.addView(workflow, new LinearLayout.LayoutParams(-1, dp(315)));

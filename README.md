@@ -24,7 +24,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Recording/privacy settings include per-app blocking plus capture cadence, batch size, max gap, and card lookback controls.
 - Supports timed/indefinite recording pauses and shows saved screenshots plus playable timelapses inside review cards for frame-by-frame context.
 - Review cards include an Android-native touch scrubber that mirrors Dayflow's media review behavior with tap-to-play and drag-to-seek interactions.
-- Weekly view supports Monday-based week navigation, weekly distribution donuts, focus heatmaps, weekly workflow grids, time distribution, context-shift comparison charts, top-level updates, next-step suggestions, application interaction summaries, touch treemaps, category-to-app Sankey breakdowns, and app-switching network charts.
+- Weekly view supports Monday-based week navigation, weekly distribution donuts, focus heatmaps, weekly overview footer metrics, weekly workflow grids, time distribution, context-shift comparison charts, top-level updates, next-step suggestions, application interaction summaries, touch treemaps, category-to-app Sankey breakdowns, and app-switching network charts.
 - Onboarding keeps provider setup local/function-focused and does not require Pro or paid-account flows.
 - Exports any date range as Markdown through Android's document picker, with clipboard fallback.
 - Reprocesses a specific timeline day by clearing old cards/observations and re-analyzing the original saved batches.
