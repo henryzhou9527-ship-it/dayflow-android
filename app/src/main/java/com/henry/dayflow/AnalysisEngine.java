@@ -6,11 +6,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 final class AnalysisEngine {
+    private final Context context;
     private final DayflowDatabase db;
     private final DayflowPrefs prefs;
     private final ActivityAnalyzer analyzer;
 
     AnalysisEngine(Context context) {
+        this.context = context.getApplicationContext();
         db = new DayflowDatabase(context);
         prefs = new DayflowPrefs(context);
         analyzer = new HybridActivityAnalyzer(context);
@@ -46,6 +48,7 @@ final class AnalysisEngine {
             List<TimelineCard> cards = analyzer.analyze(batchId, screenshots, existing);
             db.saveObservations(batchId, cards);
             db.replaceTimelineCardsInRange(windowStart, endMs, cards, batchId);
+            pregenerateTimelapsesIfNeeded(windowStart, endMs);
             db.updateBatch(batchId, "analyzed", null);
         } catch (Exception error) {
             TimelineCard card = new TimelineCard();
@@ -62,7 +65,19 @@ final class AnalysisEngine {
             List<TimelineCard> cards = new ArrayList<>();
             cards.add(card);
             db.replaceTimelineCardsInRange(startMs, endMs, cards, batchId);
+            pregenerateTimelapsesIfNeeded(startMs, endMs);
             db.updateBatch(batchId, "failed", error.getMessage());
+        }
+    }
+
+    private void pregenerateTimelapsesIfNeeded(long startMs, long endMs) {
+        if (!prefs.saveAllTimelapsesToDisk()) return;
+        TimelapseGenerator generator = new TimelapseGenerator(context);
+        for (TimelineCard card : db.fetchTimelineCardsRange(startMs, endMs)) {
+            try {
+                generator.generateForCard(db, card);
+            } catch (Exception ignored) {
+            }
         }
     }
 

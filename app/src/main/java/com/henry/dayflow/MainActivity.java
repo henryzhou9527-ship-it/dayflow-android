@@ -8,9 +8,11 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.media.MediaPlayer;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.net.Uri;
 import android.media.projection.MediaProjectionManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -25,12 +27,15 @@ import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.MediaController;
 import android.widget.ScrollView;
 import android.widget.Space;
 import android.widget.Switch;
 import android.widget.TextView;
+import android.widget.VideoView;
 import android.graphics.drawable.GradientDrawable;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -823,6 +828,7 @@ public final class MainActivity extends Activity {
             p.addView(serif(card.title, 24, Colors.TEXT));
             p.addView(text(card.detailedSummary == null ? card.summary : card.detailedSummary, 14, Colors.TEXT, false));
             addReviewFrames(p, card);
+            addTimelapseControls(p, card);
             LinearLayout row = row();
             row.addView(ratingButton(card, "Focus"), new LinearLayout.LayoutParams(0, dp(40), 1));
             row.addView(ratingButton(card, "Neutral"), new LinearLayout.LayoutParams(0, dp(40), 1));
@@ -1147,21 +1153,55 @@ public final class MainActivity extends Activity {
 
         panel.addView(text("Storage", 13, Colors.MUTED, true));
         StorageStats stats = db.storageStats();
-        panel.addView(text(stats.screenshotCount + " screenshots · " + bytes(stats.screenshotBytes) + " · " + stats.cardCount + " cards · " + stats.batchCount + " batches", 14, Colors.TEXT, false));
+        panel.addView(text(stats.screenshotCount + " screenshots · " + bytes(stats.screenshotBytes) + "\n" +
+                stats.timelapseCount + " timelapses · " + bytes(stats.timelapseBytes) + "\n" +
+                stats.cardCount + " cards · " + stats.batchCount + " batches", 14, Colors.TEXT, false));
         final EditText retention = field("Screenshot retention days", String.valueOf(prefs.retentionDays()), true);
         retention.setInputType(InputType.TYPE_CLASS_NUMBER);
         panel.addView(retention, new LinearLayout.LayoutParams(-1, dp(54)));
+        final Switch saveTimelapses = new Switch(this);
+        saveTimelapses.setText("Save all timelapses to disk");
+        saveTimelapses.setTextColor(Colors.TEXT);
+        saveTimelapses.setTextSize(13);
+        saveTimelapses.setTypeface(DayflowType.sans(this));
+        saveTimelapses.setChecked(prefs.saveAllTimelapsesToDisk());
+        panel.addView(saveTimelapses);
+        final EditText timelapseLimit = field("Timelapse storage limit MB", String.valueOf(prefs.timelapseLimitMb()), true);
+        timelapseLimit.setInputType(InputType.TYPE_CLASS_NUMBER);
+        panel.addView(timelapseLimit, new LinearLayout.LayoutParams(-1, dp(54)));
         Button purge = pillButton("Save retention and purge old screenshots");
         purge.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
                 int days = parseInt(retention.getText().toString(), prefs.retentionDays());
                 prefs.setRetentionDays(days);
+                prefs.setSaveAllTimelapsesToDisk(saveTimelapses.isChecked());
+                prefs.setTimelapseLimitMb(parseInt(timelapseLimit.getText().toString(), prefs.timelapseLimitMb()));
                 int count = db.purgeScreenshotsOlderThan(System.currentTimeMillis() - days * TimeUtil.DAY);
-                setStatus("Purged " + count + " screenshots.");
+                int videos = TimelapseGenerator.purgeToLimit(MainActivity.this, prefs.timelapseLimitBytes());
+                setStatus("Purged " + count + " screenshots and " + videos + " timelapses.");
                 refresh();
             }
         });
         panel.addView(purge, new LinearLayout.LayoutParams(-1, dp(44)));
+
+        Button deleteTimelapses = smallButton("Delete generated timelapses");
+        deleteTimelapses.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                new AlertDialog.Builder(MainActivity.this)
+                        .setTitle("Delete saved timelapses?")
+                        .setMessage("Timeline card text and screenshots stay intact. Videos can be generated again from saved screenshots.")
+                        .setPositiveButton("Delete", new DialogInterface.OnClickListener() {
+                            @Override public void onClick(DialogInterface dialog, int which) {
+                                int count = TimelapseGenerator.deleteAll(MainActivity.this);
+                                setStatus("Deleted " + count + " timelapses.");
+                                refresh();
+                            }
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .show();
+            }
+        });
+        panel.addView(deleteTimelapses, new LinearLayout.LayoutParams(-1, dp(44)));
 
         panel.addView(text("Privacy blocklist", 13, Colors.MUTED, true));
         ForegroundAppReader.AppSnapshot current = appReader.currentApp();
@@ -1370,10 +1410,15 @@ public final class MainActivity extends Activity {
         category.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) { showCategoryPicker(card); }
         });
+        Button video = smallButton("Video");
+        video.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { openOrGenerateTimelapse(card, true); }
+        });
         Button delete = smallButton("Delete");
         delete.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) { confirmDeleteCard(card); }
         });
+        actions.addView(video, new LinearLayout.LayoutParams(0, dp(40), 1));
         actions.addView(category, new LinearLayout.LayoutParams(0, dp(40), 1));
         actions.addView(delete, new LinearLayout.LayoutParams(dp(100), dp(40)));
         return actions;
@@ -1469,6 +1514,97 @@ public final class MainActivity extends Activity {
         }
 
         if (strip.getChildCount() > 0) panel.addView(scroll);
+    }
+
+    private void addTimelapseControls(LinearLayout panel, final TimelineCard card) {
+        File existing = existingTimelapse(card);
+        LinearLayout actions = row();
+        Button play = existing == null ? pillButton("Generate timelapse") : pillButton("Play timelapse");
+        play.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { openOrGenerateTimelapse(card, true); }
+        });
+        actions.addView(play, new LinearLayout.LayoutParams(0, dp(42), 1));
+        Button regenerate = smallButton("Regenerate");
+        regenerate.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { generateTimelapse(card, true); }
+        });
+        actions.addView(regenerate, new LinearLayout.LayoutParams(dp(120), dp(42)));
+        panel.addView(actions);
+        if (existing != null) {
+            panel.addView(text("Saved video summary · " + bytes(existing.length()), 12, Colors.MUTED, false));
+        }
+    }
+
+    private File existingTimelapse(TimelineCard card) {
+        if (card.videoSummaryPath == null || card.videoSummaryPath.trim().isEmpty()) return null;
+        File file = new File(card.videoSummaryPath);
+        return file.isFile() && file.length() > 0 ? file : null;
+    }
+
+    private void openOrGenerateTimelapse(TimelineCard card, boolean playWhenDone) {
+        File existing = existingTimelapse(card);
+        if (existing != null) {
+            playTimelapse(existing, card);
+            return;
+        }
+        generateTimelapse(card, playWhenDone);
+    }
+
+    private void generateTimelapse(final TimelineCard card, final boolean playWhenDone) {
+        setStatus("Generating timelapse...");
+        new Thread(new Runnable() {
+            @Override public void run() {
+                try {
+                    final File video = new TimelapseGenerator(MainActivity.this).generateForCard(db, card);
+                    runOnUiThread(new Runnable() {
+                        @Override public void run() {
+                            card.videoSummaryPath = video.getAbsolutePath();
+                            setStatus("Timelapse ready.");
+                            refresh();
+                            if (playWhenDone) playTimelapse(video, card);
+                        }
+                    });
+                } catch (final Exception error) {
+                    runOnUiThread(new Runnable() {
+                        @Override public void run() {
+                            setStatus("Timelapse failed: " + shortText(error.getMessage(), 80));
+                        }
+                    });
+                }
+            }
+        }, "dayflow-timelapse").start();
+    }
+
+    private void playTimelapse(File file, TimelineCard card) {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(8), dp(8), dp(8), 0);
+        final VideoView video = new VideoView(this);
+        video.setBackgroundColor(Color.WHITE);
+        MediaController controls = new MediaController(this);
+        controls.setAnchorView(video);
+        video.setMediaController(controls);
+        video.setVideoURI(Uri.fromFile(file));
+        panel.addView(video, new LinearLayout.LayoutParams(-1, dp(320)));
+        panel.addView(text(TimeUtil.timeLabel(card.startMs) + " - " + TimeUtil.timeLabel(card.endMs) + " · " + card.category, 12, Colors.MUTED, false));
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(card.title == null ? "Timelapse" : card.title)
+                .setView(panel)
+                .setNegativeButton("Close", null)
+                .create();
+        video.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
+            @Override public void onPrepared(MediaPlayer mp) {
+                mp.setLooping(true);
+                video.start();
+            }
+        });
+        dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+            @Override public void onDismiss(DialogInterface dialogInterface) {
+                video.stopPlayback();
+            }
+        });
+        dialog.show();
     }
 
     private Bitmap previewBitmap(String filePath) {

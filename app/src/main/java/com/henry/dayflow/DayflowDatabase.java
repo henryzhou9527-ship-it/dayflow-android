@@ -17,10 +17,13 @@ import java.util.Map;
 
 final class DayflowDatabase extends SQLiteOpenHelper {
     private static final String DB_NAME = "dayflow.sqlite";
-    private static final int DB_VERSION = 4;
+    private static final int DB_VERSION = 5;
+
+    private final Context appContext;
 
     DayflowDatabase(Context context) {
         super(context.getApplicationContext(), DB_NAME, null, DB_VERSION);
+        appContext = context.getApplicationContext();
     }
 
     @Override
@@ -41,6 +44,9 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         }
         if (oldVersion < 4) {
             createFeatureTables(db);
+        }
+        if (oldVersion < 5) {
+            addColumnIfMissing(db, "timeline_cards", "video_summary_path", "TEXT");
         }
     }
 
@@ -91,6 +97,7 @@ final class DayflowDatabase extends SQLiteOpenHelper {
                 "title TEXT NOT NULL," +
                 "summary TEXT," +
                 "detailed_summary TEXT," +
+                "video_summary_path TEXT," +
                 "category TEXT NOT NULL," +
                 "subcategory TEXT," +
                 "metadata TEXT," +
@@ -351,6 +358,7 @@ final class DayflowDatabase extends SQLiteOpenHelper {
                 values.put("title", card.title);
                 values.put("summary", card.summary);
                 values.put("detailed_summary", card.detailedSummary);
+                values.put("video_summary_path", card.videoSummaryPath);
                 values.put("category", card.category);
                 values.put("subcategory", card.subcategory);
                 values.put("metadata", card.metadata);
@@ -403,6 +411,17 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         if (category == null || category.trim().isEmpty()) return;
         ContentValues values = new ContentValues();
         values.put("category", category.trim());
+        getWritableDatabase().update(
+                "timeline_cards",
+                values,
+                "id = ? AND is_deleted = 0",
+                new String[]{String.valueOf(cardId)});
+    }
+
+    synchronized void updateTimelineCardVideoPath(long cardId, String videoPath) {
+        ContentValues values = new ContentValues();
+        if (videoPath == null || videoPath.trim().isEmpty()) values.putNull("video_summary_path");
+        else values.put("video_summary_path", videoPath.trim());
         getWritableDatabase().update(
                 "timeline_cards",
                 values,
@@ -763,6 +782,8 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         SQLiteDatabase db = getReadableDatabase();
         stats.screenshotCount = longFor(db, "SELECT COUNT(*) FROM screenshots WHERE is_deleted = 0");
         stats.screenshotBytes = longFor(db, "SELECT COALESCE(SUM(file_size),0) FROM screenshots WHERE is_deleted = 0");
+        stats.timelapseCount = TimelapseGenerator.countTimelapses(appContext);
+        stats.timelapseBytes = TimelapseGenerator.storageBytes(appContext);
         stats.cardCount = longFor(db, "SELECT COUNT(*) FROM timeline_cards WHERE is_deleted = 0");
         stats.batchCount = longFor(db, "SELECT COUNT(*) FROM analysis_batches");
         return stats;
@@ -788,10 +809,24 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         card.title = c.getString(c.getColumnIndexOrThrow("title"));
         card.summary = c.getString(c.getColumnIndexOrThrow("summary"));
         card.detailedSummary = c.getString(c.getColumnIndexOrThrow("detailed_summary"));
+        int videoColumn = c.getColumnIndex("video_summary_path");
+        card.videoSummaryPath = videoColumn >= 0 ? c.getString(videoColumn) : null;
         card.category = c.getString(c.getColumnIndexOrThrow("category"));
         card.subcategory = c.getString(c.getColumnIndexOrThrow("subcategory"));
         card.metadata = c.getString(c.getColumnIndexOrThrow("metadata"));
         return card;
+    }
+
+    private static void addColumnIfMissing(SQLiteDatabase db, String table, String column, String type) {
+        Cursor c = db.rawQuery("PRAGMA table_info(" + table + ")", null);
+        try {
+            while (c.moveToNext()) {
+                if (column.equals(c.getString(c.getColumnIndexOrThrow("name")))) return;
+            }
+        } finally {
+            c.close();
+        }
+        db.execSQL("ALTER TABLE " + table + " ADD COLUMN " + column + " " + type);
     }
 
     private static void addToMap(Map<String, Long> map, String key, long value) {

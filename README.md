@@ -13,11 +13,12 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Provider settings include a backup provider so timeline analysis and chat can retry through another route before falling back locally.
 - Adds first-run onboarding, journal entries, daily goals, review ratings, editable categories, storage stats, per-app privacy blocking, day deletion, and reprocessing controls.
 - Timeline and review cards support manual category reassignment and single-card deletion, matching the original Dayflow correction workflow.
+- Timeline and review cards can generate, save, regenerate, and play MP4 timelapse summaries from the card's captured screenshots.
 - Daily view surfaces day-goal progress, focus summaries, distraction summaries, workflow heatmaps, and standup copy actions.
 - Daily standups are stored by day and can be saved or regenerated through the selected Gemini/Ollama provider with local fallback.
 - Journal reminders can schedule recurring intention and reflection notifications on selected weekdays, with boot-time rescheduling.
 - Redacts screenshots for blocked apps while still preserving timeline continuity.
-- Supports timed/indefinite recording pauses and shows saved screenshots inside review cards for frame-by-frame context.
+- Supports timed/indefinite recording pauses and shows saved screenshots plus playable timelapses inside review cards for frame-by-frame context.
 - Weekly view supports Monday-based week navigation, focus heatmaps, time distribution, top-level updates, next-step suggestions, and application interaction summaries.
 - Exports the current day timeline as Markdown.
 - Keeps the Dayflow visual language: bundled Dayflow fonts/assets, warm cream/orange gradients, serif headings, soft white panels, compact timeline cards, heatmaps, and productivity dashboards.

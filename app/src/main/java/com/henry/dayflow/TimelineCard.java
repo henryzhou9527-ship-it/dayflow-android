@@ -11,6 +11,7 @@ final class TimelineCard {
     String title;
     String summary;
     String detailedSummary;
+    String videoSummaryPath;
     String metadata;
 
     long durationMs() {

@@ -60,6 +60,19 @@ final class DayflowPrefs {
         return Math.max(1, prefs.getInt("retention_days", 7));
     }
 
+    boolean saveAllTimelapsesToDisk() {
+        return prefs.getBoolean("save_all_timelapses_to_disk", false);
+    }
+
+    long timelapseLimitBytes() {
+        int mb = Math.max(256, prefs.getInt("timelapse_limit_mb", 10_240));
+        return mb * 1024L * 1024L;
+    }
+
+    int timelapseLimitMb() {
+        return (int) Math.max(256, timelapseLimitBytes() / (1024L * 1024L));
+    }
+
     boolean journalRemindersEnabled() {
         return prefs.getBoolean("journal_reminders_enabled", false);
     }
@@ -161,6 +174,14 @@ final class DayflowPrefs {
 
     void setRetentionDays(int days) {
         prefs.edit().putInt("retention_days", Math.max(1, Math.min(365, days))).apply();
+    }
+
+    void setSaveAllTimelapsesToDisk(boolean value) {
+        prefs.edit().putBoolean("save_all_timelapses_to_disk", value).apply();
+    }
+
+    void setTimelapseLimitMb(int mb) {
+        prefs.edit().putInt("timelapse_limit_mb", Math.max(256, Math.min(512_000, mb))).apply();
     }
 
     void setJournalRemindersEnabled(boolean enabled) {
