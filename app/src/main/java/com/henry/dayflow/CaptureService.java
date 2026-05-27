@@ -9,7 +9,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.graphics.PixelFormat;
+import android.graphics.RectF;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
 import android.media.Image;
@@ -51,11 +54,13 @@ public final class CaptureService extends Service {
     private int captureHeight;
     private int densityDpi;
     private boolean running;
+    private long lastPurgeMs;
 
     private final Runnable captureTick = new Runnable() {
         @Override
         public void run() {
             captureLatestImage();
+            purgeIfNeeded();
             if (running) handler.postDelayed(this, prefs.screenshotIntervalMs());
         }
     };
@@ -159,9 +164,11 @@ public final class CaptureService extends Service {
         if (imageReader == null) return;
         Image image = null;
         try {
+            ForegroundAppReader.AppSnapshot app = appReader.currentApp();
+            boolean blocked = db.isBlockedApp(app.packageName);
             image = imageReader.acquireLatestImage();
             if (image == null) return;
-            Bitmap bitmap = bitmapFromImage(image);
+            Bitmap bitmap = blocked ? redactedBitmap(app) : bitmapFromImage(image);
             Bitmap scaled = scaleForStorage(bitmap);
             if (scaled != bitmap) bitmap.recycle();
 
@@ -172,7 +179,6 @@ public final class CaptureService extends Service {
             out.close();
             scaled.recycle();
 
-            ForegroundAppReader.AppSnapshot app = appReader.currentApp();
             db.insertScreenshot(file, System.currentTimeMillis(), app.packageName, app.label);
         } catch (Exception ignored) {
         } finally {
@@ -208,6 +214,42 @@ public final class CaptureService extends Service {
         if (!dir.exists()) dir.mkdirs();
         String stamp = new SimpleDateFormat("yyyyMMdd_HHmmssSSS", Locale.US).format(new Date());
         return new File(dir, stamp + ".jpg");
+    }
+
+    private Bitmap redactedBitmap(ForegroundAppReader.AppSnapshot app) {
+        int width = Math.max(320, Math.min(captureWidth, 720));
+        int height = Math.max(320, Math.round(width * (captureHeight / (float) Math.max(1, captureWidth))));
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        canvas.drawColor(Colors.BACKGROUND_TOP);
+        RectF card = new RectF(width * 0.12f, height * 0.35f, width * 0.88f, height * 0.65f);
+        paint.setColor(Colors.CARD);
+        canvas.drawRoundRect(card, 24, 24, paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(2f);
+        paint.setColor(Colors.STROKE);
+        canvas.drawRoundRect(card, 24, 24, paint);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setTypeface(DayflowType.serif(this));
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setTextSize(Math.max(24f, width * 0.052f));
+        paint.setColor(Colors.TEXT);
+        canvas.drawText("Private app hidden", width / 2f, height * 0.48f, paint);
+        paint.setTypeface(DayflowType.sans(this, false));
+        paint.setTextSize(Math.max(12f, width * 0.026f));
+        paint.setColor(Colors.MUTED);
+        String label = app.label == null ? "Blocked capture" : app.label + " capture blocked";
+        canvas.drawText(label, width / 2f, height * 0.55f, paint);
+        return bitmap;
+    }
+
+    private void purgeIfNeeded() {
+        long now = System.currentTimeMillis();
+        if (now - lastPurgeMs < 6 * TimeUtil.HOUR) return;
+        lastPurgeMs = now;
+        long cutoff = now - prefs.retentionDays() * TimeUtil.DAY;
+        db.purgeScreenshotsOlderThan(cutoff);
     }
 
     private void stopCapture(boolean stopSelf) {

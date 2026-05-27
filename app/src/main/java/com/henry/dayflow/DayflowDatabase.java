@@ -12,11 +12,12 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 final class DayflowDatabase extends SQLiteOpenHelper {
     private static final String DB_NAME = "dayflow.sqlite";
-    private static final int DB_VERSION = 1;
+    private static final int DB_VERSION = 2;
 
     DayflowDatabase(Context context) {
         super(context.getApplicationContext(), DB_NAME, null, DB_VERSION);
@@ -24,6 +25,20 @@ final class DayflowDatabase extends SQLiteOpenHelper {
 
     @Override
     public void onCreate(SQLiteDatabase db) {
+        createCoreTables(db);
+        createFeatureTables(db);
+        seedDefaultCategories(db);
+    }
+
+    @Override
+    public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        if (oldVersion < 2) {
+            createFeatureTables(db);
+            seedDefaultCategories(db);
+        }
+    }
+
+    private void createCoreTables(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE screenshots (" +
                 "id INTEGER PRIMARY KEY AUTOINCREMENT," +
                 "captured_at INTEGER NOT NULL," +
@@ -79,8 +94,79 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         db.execSQL("CREATE INDEX idx_cards_time ON timeline_cards(start_ts, end_ts)");
     }
 
-    @Override
-    public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+    private void createFeatureTables(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS categories (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "name TEXT NOT NULL UNIQUE," +
+                "color_hex TEXT NOT NULL," +
+                "details TEXT," +
+                "sort_order INTEGER NOT NULL," +
+                "is_system INTEGER NOT NULL DEFAULT 0," +
+                "is_idle INTEGER NOT NULL DEFAULT 0," +
+                "created_at INTEGER NOT NULL," +
+                "updated_at INTEGER NOT NULL)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_categories_order ON categories(sort_order)");
+
+        db.execSQL("CREATE TABLE IF NOT EXISTS journal_entries (" +
+                "day TEXT PRIMARY KEY," +
+                "intentions TEXT," +
+                "notes TEXT," +
+                "goals TEXT," +
+                "reflections TEXT," +
+                "summary TEXT," +
+                "status TEXT NOT NULL DEFAULT 'draft'," +
+                "created_at INTEGER NOT NULL," +
+                "updated_at INTEGER NOT NULL)");
+
+        db.execSQL("CREATE TABLE IF NOT EXISTS day_goals (" +
+                "day TEXT PRIMARY KEY," +
+                "focus_target_minutes INTEGER NOT NULL," +
+                "distraction_limit_minutes INTEGER NOT NULL," +
+                "is_skipped INTEGER NOT NULL DEFAULT 0," +
+                "created_at INTEGER NOT NULL," +
+                "updated_at INTEGER NOT NULL)");
+
+        db.execSQL("CREATE TABLE IF NOT EXISTS timeline_review_ratings (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "start_ts INTEGER NOT NULL," +
+                "end_ts INTEGER NOT NULL," +
+                "rating TEXT NOT NULL," +
+                "created_at INTEGER NOT NULL)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_review_ratings_time ON timeline_review_ratings(start_ts, end_ts)");
+
+        db.execSQL("CREATE TABLE IF NOT EXISTS blocked_apps (" +
+                "package_name TEXT PRIMARY KEY," +
+                "app_label TEXT," +
+                "is_blocked INTEGER NOT NULL DEFAULT 1," +
+                "updated_at INTEGER NOT NULL)");
+    }
+
+    private void seedDefaultCategories(SQLiteDatabase db) {
+        Cursor c = db.rawQuery("SELECT COUNT(*) FROM categories", null);
+        try {
+            if (c.moveToFirst() && c.getInt(0) > 0) return;
+        } finally {
+            c.close();
+        }
+        insertCategory(db, "Work", "#B984FF", "Career, school, or productivity-focused activities.", 0, false, false);
+        insertCategory(db, "Personal", "#6AADFF", "Purposeful non-work activities and life tasks.", 1, false, false);
+        insertCategory(db, "Communication", "#FFAE8C", "Meetings, messages, calls, email, and syncs.", 2, false, false);
+        insertCategory(db, "Distraction", "#FF5950", "Passive consumption, idle scrolling, and entertainment without clear intent.", 3, false, false);
+        insertCategory(db, "Idle", "#A0AEC0", "Use when the user is idle for most of the period.", 4, true, true);
+    }
+
+    private void insertCategory(SQLiteDatabase db, String name, String color, String details, int order, boolean system, boolean idle) {
+        ContentValues values = new ContentValues();
+        long now = System.currentTimeMillis();
+        values.put("name", name);
+        values.put("color_hex", color);
+        values.put("details", details);
+        values.put("sort_order", order);
+        values.put("is_system", system ? 1 : 0);
+        values.put("is_idle", idle ? 1 : 0);
+        values.put("created_at", now);
+        values.put("updated_at", now);
+        db.insertWithOnConflict("categories", null, values, SQLiteDatabase.CONFLICT_IGNORE);
     }
 
     synchronized long insertScreenshot(File file, long capturedAtMs, String packageName, String appLabel) {
@@ -252,11 +338,12 @@ final class DayflowDatabase extends SQLiteOpenHelper {
             long duration = card.durationMs();
             metrics.trackedMs += duration;
             String category = card.category == null ? "Work" : card.category;
+            String normalized = category.toLowerCase(Locale.US);
             addToMap(metrics.categoryMs, category, duration);
-            if (!category.toLowerCase().contains("distraction") && !category.toLowerCase().contains("idle")) {
+            if (!normalized.contains("distraction") && !normalized.contains("idle")) {
                 metrics.productiveMs += duration;
             }
-            if (category.toLowerCase().contains("distraction")) {
+            if (normalized.contains("distraction")) {
                 metrics.distractionMs += duration;
             }
             String app = appFromMetadata(card.metadata);
@@ -282,6 +369,213 @@ final class DayflowDatabase extends SQLiteOpenHelper {
                     .append("\n");
         }
         return sb.toString();
+    }
+
+    synchronized List<Category> fetchCategories() {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT * FROM categories ORDER BY sort_order ASC, name ASC",
+                null);
+        try {
+            List<Category> categories = new ArrayList<>();
+            while (c.moveToNext()) {
+                Category category = new Category();
+                category.id = c.getLong(c.getColumnIndexOrThrow("id"));
+                category.name = c.getString(c.getColumnIndexOrThrow("name"));
+                category.colorHex = c.getString(c.getColumnIndexOrThrow("color_hex"));
+                category.details = c.getString(c.getColumnIndexOrThrow("details"));
+                category.order = c.getInt(c.getColumnIndexOrThrow("sort_order"));
+                category.system = c.getInt(c.getColumnIndexOrThrow("is_system")) != 0;
+                category.idle = c.getInt(c.getColumnIndexOrThrow("is_idle")) != 0;
+                categories.add(category);
+            }
+            return categories;
+        } finally {
+            c.close();
+        }
+    }
+
+    synchronized void saveCategory(Category category) {
+        ContentValues values = new ContentValues();
+        long now = System.currentTimeMillis();
+        values.put("name", category.name);
+        values.put("color_hex", category.colorHex == null ? "#E5E7EB" : category.colorHex);
+        values.put("details", category.details == null ? "" : category.details);
+        values.put("sort_order", category.order);
+        values.put("is_system", category.system ? 1 : 0);
+        values.put("is_idle", category.idle ? 1 : 0);
+        values.put("updated_at", now);
+        if (category.id > 0) {
+            getWritableDatabase().update("categories", values, "id = ?", new String[]{String.valueOf(category.id)});
+        } else {
+            values.put("created_at", now);
+            getWritableDatabase().insertWithOnConflict("categories", null, values, SQLiteDatabase.CONFLICT_REPLACE);
+        }
+    }
+
+    synchronized void deleteCategory(long id) {
+        getWritableDatabase().delete("categories", "id = ? AND is_system = 0", new String[]{String.valueOf(id)});
+    }
+
+    synchronized JournalEntry fetchJournal(String day) {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT * FROM journal_entries WHERE day = ?",
+                new String[]{day});
+        try {
+            JournalEntry entry = new JournalEntry();
+            entry.day = day;
+            entry.status = "draft";
+            if (!c.moveToFirst()) return entry;
+            entry.intentions = c.getString(c.getColumnIndexOrThrow("intentions"));
+            entry.notes = c.getString(c.getColumnIndexOrThrow("notes"));
+            entry.goals = c.getString(c.getColumnIndexOrThrow("goals"));
+            entry.reflections = c.getString(c.getColumnIndexOrThrow("reflections"));
+            entry.summary = c.getString(c.getColumnIndexOrThrow("summary"));
+            entry.status = c.getString(c.getColumnIndexOrThrow("status"));
+            return entry;
+        } finally {
+            c.close();
+        }
+    }
+
+    synchronized void saveJournal(JournalEntry entry) {
+        ContentValues values = new ContentValues();
+        long now = System.currentTimeMillis();
+        values.put("day", entry.day);
+        values.put("intentions", entry.intentions);
+        values.put("notes", entry.notes);
+        values.put("goals", entry.goals);
+        values.put("reflections", entry.reflections);
+        values.put("summary", entry.summary);
+        values.put("status", entry.status == null ? "draft" : entry.status);
+        values.put("created_at", now);
+        values.put("updated_at", now);
+        getWritableDatabase().insertWithOnConflict("journal_entries", null, values, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    synchronized DayGoal fetchDayGoal(String day) {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT * FROM day_goals WHERE day = ?",
+                new String[]{day});
+        try {
+            DayGoal goal = new DayGoal();
+            goal.day = day;
+            goal.focusTargetMinutes = 240;
+            goal.distractionLimitMinutes = 45;
+            if (!c.moveToFirst()) return goal;
+            goal.focusTargetMinutes = c.getInt(c.getColumnIndexOrThrow("focus_target_minutes"));
+            goal.distractionLimitMinutes = c.getInt(c.getColumnIndexOrThrow("distraction_limit_minutes"));
+            goal.skipped = c.getInt(c.getColumnIndexOrThrow("is_skipped")) != 0;
+            return goal;
+        } finally {
+            c.close();
+        }
+    }
+
+    synchronized void saveDayGoal(DayGoal goal) {
+        ContentValues values = new ContentValues();
+        long now = System.currentTimeMillis();
+        values.put("day", goal.day);
+        values.put("focus_target_minutes", goal.focusTargetMinutes);
+        values.put("distraction_limit_minutes", goal.distractionLimitMinutes);
+        values.put("is_skipped", goal.skipped ? 1 : 0);
+        values.put("created_at", now);
+        values.put("updated_at", now);
+        getWritableDatabase().insertWithOnConflict("day_goals", null, values, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    synchronized void saveReviewRating(TimelineCard card, String rating) {
+        ContentValues values = new ContentValues();
+        values.put("start_ts", card.startMs);
+        values.put("end_ts", card.endMs);
+        values.put("rating", rating);
+        values.put("created_at", System.currentTimeMillis());
+        getWritableDatabase().insert("timeline_review_ratings", null, values);
+    }
+
+    synchronized Map<String, Long> reviewSummary(String day) {
+        long start = TimeUtil.dayStartMs(day);
+        long end = start + TimeUtil.DAY;
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT rating, SUM(end_ts - start_ts) FROM timeline_review_ratings WHERE start_ts >= ? AND end_ts <= ? GROUP BY rating",
+                new String[]{String.valueOf(start), String.valueOf(end)});
+        try {
+            Map<String, Long> map = new LinkedHashMap<>();
+            while (c.moveToNext()) map.put(c.getString(0), c.getLong(1));
+            return map;
+        } finally {
+            c.close();
+        }
+    }
+
+    synchronized boolean isBlockedApp(String packageName) {
+        if (packageName == null || packageName.trim().isEmpty()) return false;
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT is_blocked FROM blocked_apps WHERE package_name = ?",
+                new String[]{packageName});
+        try {
+            return c.moveToFirst() && c.getInt(0) != 0;
+        } finally {
+            c.close();
+        }
+    }
+
+    synchronized void setBlockedApp(String packageName, String appLabel, boolean blocked) {
+        if (packageName == null || packageName.trim().isEmpty()) return;
+        ContentValues values = new ContentValues();
+        values.put("package_name", packageName);
+        values.put("app_label", appLabel);
+        values.put("is_blocked", blocked ? 1 : 0);
+        values.put("updated_at", System.currentTimeMillis());
+        getWritableDatabase().insertWithOnConflict("blocked_apps", null, values, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    synchronized List<ForegroundAppReader.AppSnapshot> recentApps() {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT package_name, COALESCE(MAX(app_label), package_name) FROM screenshots WHERE package_name IS NOT NULL GROUP BY package_name ORDER BY MAX(captured_at) DESC LIMIT 24",
+                null);
+        try {
+            List<ForegroundAppReader.AppSnapshot> apps = new ArrayList<>();
+            while (c.moveToNext()) apps.add(new ForegroundAppReader.AppSnapshot(c.getString(0), c.getString(1)));
+            return apps;
+        } finally {
+            c.close();
+        }
+    }
+
+    synchronized void deleteTimelineDay(String day) {
+        ContentValues values = new ContentValues();
+        values.put("is_deleted", 1);
+        getWritableDatabase().update("timeline_cards", values, "day = ?", new String[]{day});
+    }
+
+    synchronized int purgeScreenshotsOlderThan(long cutoffMs) {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT file_path FROM screenshots WHERE captured_at < ? AND is_deleted = 0",
+                new String[]{String.valueOf(cutoffMs)});
+        int count = 0;
+        try {
+            while (c.moveToNext()) {
+                File file = new File(c.getString(0));
+                if (file.exists()) file.delete();
+                count++;
+            }
+        } finally {
+            c.close();
+        }
+        ContentValues values = new ContentValues();
+        values.put("is_deleted", 1);
+        getWritableDatabase().update("screenshots", values, "captured_at < ?", new String[]{String.valueOf(cutoffMs)});
+        return count;
+    }
+
+    synchronized StorageStats storageStats() {
+        StorageStats stats = new StorageStats();
+        SQLiteDatabase db = getReadableDatabase();
+        stats.screenshotCount = longFor(db, "SELECT COUNT(*) FROM screenshots WHERE is_deleted = 0");
+        stats.screenshotBytes = longFor(db, "SELECT COALESCE(SUM(file_size),0) FROM screenshots WHERE is_deleted = 0");
+        stats.cardCount = longFor(db, "SELECT COUNT(*) FROM timeline_cards WHERE is_deleted = 0");
+        stats.batchCount = longFor(db, "SELECT COUNT(*) FROM analysis_batches");
+        return stats;
     }
 
     private ScreenshotRecord readScreenshot(Cursor c) {
@@ -322,6 +616,15 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         if (start < 0) return null;
         int end = metadata.indexOf(';', start);
         return end > start ? metadata.substring(start + marker.length(), end) : metadata.substring(start + marker.length());
+    }
+
+    private static long longFor(SQLiteDatabase db, String sql) {
+        Cursor c = db.rawQuery(sql, null);
+        try {
+            return c.moveToFirst() ? c.getLong(0) : 0L;
+        } finally {
+            c.close();
+        }
     }
 
     static <K> List<Map.Entry<K, Long>> sortedByDuration(Map<K, Long> map) {

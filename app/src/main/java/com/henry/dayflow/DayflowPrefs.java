@@ -40,8 +40,36 @@ final class DayflowPrefs {
         return prefs.getBoolean("use_cloud_analyzer", false);
     }
 
+    String provider() {
+        return prefs.getString("provider", useCloudAnalyzer() ? "Gemini" : "Heuristic");
+    }
+
+    String ollamaEndpoint() {
+        return prefs.getString("ollama_endpoint", "http://127.0.0.1:11434");
+    }
+
+    int retentionDays() {
+        return Math.max(1, prefs.getInt("retention_days", 7));
+    }
+
     void setCloudAnalyzer(boolean enabled) {
         prefs.edit().putBoolean("use_cloud_analyzer", enabled).apply();
+    }
+
+    void setProvider(String provider) {
+        String value = provider == null || provider.trim().isEmpty() ? "Heuristic" : provider.trim();
+        prefs.edit()
+                .putString("provider", value)
+                .putBoolean("use_cloud_analyzer", "Gemini".equalsIgnoreCase(value))
+                .apply();
+    }
+
+    void setOllamaEndpoint(String endpoint) {
+        prefs.edit().putString("ollama_endpoint", endpoint == null ? "" : endpoint.trim()).apply();
+    }
+
+    void setRetentionDays(int days) {
+        prefs.edit().putInt("retention_days", Math.max(1, Math.min(365, days))).apply();
     }
 
     void setGeminiApiKey(String key) {

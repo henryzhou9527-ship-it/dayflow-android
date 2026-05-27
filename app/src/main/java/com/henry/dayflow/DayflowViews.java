@@ -1,6 +1,8 @@
 package com.henry.dayflow;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
@@ -12,6 +14,7 @@ import android.util.AttributeSet;
 import android.view.View;
 import android.widget.FrameLayout;
 
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -39,13 +42,26 @@ final class GradientFrameLayout extends FrameLayout {
 
 final class DayflowLogoView extends View {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private Bitmap logo;
 
     DayflowLogoView(Context context) {
         super(context);
+        try {
+            InputStream in = context.getAssets().open("images/dayflow_logo_main.png");
+            logo = BitmapFactory.decodeStream(in);
+            in.close();
+        } catch (Exception ignored) {
+            logo = null;
+        }
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
+        if (logo != null) {
+            paint.setFilterBitmap(true);
+            canvas.drawBitmap(logo, null, new RectF(0, 0, getWidth(), getHeight()), paint);
+            return;
+        }
         float cx = getWidth() / 2f;
         float cy = getHeight() / 2f;
         float r = Math.min(getWidth(), getHeight()) * 0.18f;
@@ -154,14 +170,14 @@ final class DashboardCanvasView extends View {
 
     private int dp(float v) { return (int) (v * getResources().getDisplayMetrics().density + 0.5f); }
     private void drawSerif(Canvas c, String text, float x, float y, float size, int color) {
-        paint.setTypeface(Typeface.create(Typeface.SERIF, Typeface.NORMAL));
+        paint.setTypeface(DayflowType.serif(getContext()));
         paint.setTextSize(size);
         paint.setColor(color);
         paint.setFakeBoldText(false);
         c.drawText(text, x, y, paint);
     }
     private void drawSans(Canvas c, String text, float x, float y, float size, int color, boolean caps) {
-        paint.setTypeface(Typeface.create(Typeface.SANS_SERIF, caps ? Typeface.BOLD : Typeface.NORMAL));
+        paint.setTypeface(DayflowType.sans(getContext(), caps));
         paint.setTextSize(size);
         paint.setColor(color);
         paint.setFakeBoldText(false);
@@ -227,13 +243,13 @@ final class TimelineCanvasView extends View {
 
     private int dp(float v) { return (int) (v * getResources().getDisplayMetrics().density + 0.5f); }
     private void drawSerif(Canvas c, String text, float x, float y, float size, int color) {
-        paint.setTypeface(Typeface.create(Typeface.SERIF, Typeface.NORMAL));
+        paint.setTypeface(DayflowType.serif(getContext()));
         paint.setTextSize(size);
         paint.setColor(color);
         c.drawText(text, x, y, paint);
     }
     private void drawSans(Canvas c, String text, float x, float y, float size, int color) {
-        paint.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
+        paint.setTypeface(DayflowType.sans(getContext(), false));
         paint.setTextSize(size);
         paint.setColor(color);
         c.drawText(text, x, y, paint);
@@ -297,13 +313,13 @@ final class DailyWorkflowView extends View {
     }
     private int dp(float v) { return (int) (v * getResources().getDisplayMetrics().density + 0.5f); }
     private void drawSerif(Canvas c, String text, float x, float y, float size, int color) {
-        paint.setTypeface(Typeface.create(Typeface.SERIF, Typeface.NORMAL));
+        paint.setTypeface(DayflowType.serif(getContext()));
         paint.setTextSize(size);
         paint.setColor(color);
         c.drawText(text, x, y, paint);
     }
     private void drawSans(Canvas c, String text, float x, float y, float size, int color) {
-        paint.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
+        paint.setTypeface(DayflowType.sans(getContext(), false));
         paint.setTextSize(size);
         paint.setColor(color);
         c.drawText(text, x, y, paint);
@@ -380,13 +396,13 @@ final class WeeklyCanvasView extends View {
     }
     private int dp(float v) { return (int) (v * getResources().getDisplayMetrics().density + 0.5f); }
     private void drawSerif(Canvas c, String text, float x, float y, float size, int color) {
-        paint.setTypeface(Typeface.create(Typeface.SERIF, Typeface.NORMAL));
+        paint.setTypeface(DayflowType.serif(getContext()));
         paint.setTextSize(size);
         paint.setColor(color);
         c.drawText(text, x, y, paint);
     }
     private void drawSans(Canvas c, String text, float x, float y, float size, int color) {
-        paint.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL));
+        paint.setTypeface(DayflowType.sans(getContext(), false));
         paint.setTextSize(size);
         paint.setColor(color);
         c.drawText(text, x, y, paint);

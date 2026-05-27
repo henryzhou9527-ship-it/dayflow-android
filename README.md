@@ -1,6 +1,6 @@
 # Dayflow Android
 
-An Android-native Dayflow prototype: private screen journal, local-first storage, automatic 15-minute activity batches, Dayflow-inspired timeline/daily/weekly/chat views, and optional Gemini vision analysis.
+An Android-native Dayflow prototype: private screen journal, local-first storage, automatic 15-minute activity batches, Dayflow-inspired timeline/daily/weekly/journal/review/chat views, editable categories, privacy blocking, retention controls, and optional Gemini vision analysis.
 
 ## What It Does
 
@@ -9,8 +9,10 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Uses Usage Access metadata to identify the foreground app.
 - Builds 15-minute analysis batches and rewrites cards with a 45-minute lookback window.
 - Falls back to a local heuristic analyzer when no Gemini API key is configured.
+- Adds journal entries, daily goals, review ratings, editable categories, storage stats, per-app privacy blocking, day deletion, and reprocessing controls.
+- Redacts screenshots for blocked apps while still preserving timeline continuity.
 - Exports the current day timeline as Markdown.
-- Keeps the Dayflow visual language: warm cream/orange gradients, serif headings, soft white panels, compact timeline cards, heatmaps, and productivity dashboards.
+- Keeps the Dayflow visual language: bundled Dayflow fonts/assets, warm cream/orange gradients, serif headings, soft white panels, compact timeline cards, heatmaps, and productivity dashboards.
 
 ## APK
 

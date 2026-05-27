@@ -6,10 +6,12 @@ import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.media.projection.MediaProjectionManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -23,11 +25,11 @@ import android.widget.ScrollView;
 import android.widget.Space;
 import android.widget.Switch;
 import android.widget.TextView;
-import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public final class MainActivity extends Activity {
@@ -92,9 +94,9 @@ public final class MainActivity extends Activity {
         titleStack.setPadding(dp(10), 0, 0, 0);
         header.addView(titleStack, new LinearLayout.LayoutParams(0, -1, 1));
         TextView title = text("Dayflow", 34, Colors.TEXT, true);
-        title.setTypeface(Typeface.create(Typeface.SERIF, Typeface.NORMAL));
         titleStack.addView(title);
-        statusText = text("", 12, Colors.MUTED, false);
+        title.setTypeface(DayflowType.serif(this));
+        statusText = text("Private timeline ready.", 12, Colors.MUTED, false);
         titleStack.addView(statusText);
 
         Button start = pillButton("Start");
@@ -105,7 +107,10 @@ public final class MainActivity extends Activity {
 
         Button stop = iconButton("■");
         stop.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { stopService(new Intent(MainActivity.this, CaptureService.class).setAction(CaptureService.ACTION_STOP)); setStatus("Recording stopped."); }
+            @Override public void onClick(View view) {
+                startService(new Intent(MainActivity.this, CaptureService.class).setAction(CaptureService.ACTION_STOP));
+                setStatus("Recording stopped.");
+            }
         });
         header.addView(stop, new LinearLayout.LayoutParams(dp(42), dp(42)));
 
@@ -115,7 +120,7 @@ public final class MainActivity extends Activity {
         tabsScroll.setHorizontalScrollBarEnabled(false);
         tabsScroll.addView(tabRow);
         shell.addView(tabsScroll, new LinearLayout.LayoutParams(-1, dp(48)));
-        for (String tab : new String[]{"Timeline", "Daily", "Weekly", "Chat", "Settings"}) addTab(tab);
+        for (String tab : new String[]{"Timeline", "Daily", "Weekly", "Journal", "Review", "Chat", "Categories", "Settings"}) addTab(tab);
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(false);
@@ -137,7 +142,10 @@ public final class MainActivity extends Activity {
         if ("Timeline".equals(selectedTab)) renderTimeline(dayCards, metrics);
         if ("Daily".equals(selectedTab)) renderDaily(dayCards);
         if ("Weekly".equals(selectedTab)) renderWeekly();
+        if ("Journal".equals(selectedTab)) renderJournal(dayCards, metrics);
+        if ("Review".equals(selectedTab)) renderReview(dayCards);
         if ("Chat".equals(selectedTab)) renderChat(metrics);
+        if ("Categories".equals(selectedTab)) renderCategories();
         if ("Settings".equals(selectedTab)) renderSettings();
     }
 
@@ -205,6 +213,180 @@ public final class MainActivity extends Activity {
         content.addView(weekly, new LinearLayout.LayoutParams(-1, dp(520)));
     }
 
+    private void renderJournal(final List<TimelineCard> cards, final DashboardMetrics metrics) {
+        final JournalEntry entry = db.fetchJournal(selectedDay);
+        final DayGoal goal = db.fetchDayGoal(selectedDay);
+
+        LinearLayout panel = panel();
+        panel.addView(serif("Journal · " + selectedDay, 30, Colors.TEXT));
+        panel.addView(text("Plan the day, keep notes, then close the loop with reflection.", 14, Colors.MUTED, false));
+
+        final EditText focusTarget = field("Focus target minutes", String.valueOf(goal.focusTargetMinutes), true);
+        final EditText distractionLimit = field("Distraction limit minutes", String.valueOf(goal.distractionLimitMinutes), true);
+        panel.addView(focusTarget, new LinearLayout.LayoutParams(-1, dp(54)));
+        panel.addView(distractionLimit, new LinearLayout.LayoutParams(-1, dp(54)));
+
+        final Switch skipped = new Switch(this);
+        skipped.setText("Skip goals for this day");
+        skipped.setTextColor(Colors.TEXT);
+        skipped.setTypeface(DayflowType.sans(this));
+        skipped.setChecked(goal.skipped);
+        panel.addView(skipped);
+
+        final EditText intentions = field("Intentions", entry.intentions, false);
+        final EditText goals = field("Goals", entry.goals, false);
+        final EditText notes = field("Notes", entry.notes, false);
+        final EditText reflections = field("Reflections", entry.reflections, false);
+        final EditText summary = field("Summary", entry.summary, false);
+        panel.addView(intentions, new LinearLayout.LayoutParams(-1, dp(96)));
+        panel.addView(goals, new LinearLayout.LayoutParams(-1, dp(96)));
+        panel.addView(notes, new LinearLayout.LayoutParams(-1, dp(120)));
+        panel.addView(reflections, new LinearLayout.LayoutParams(-1, dp(120)));
+        panel.addView(summary, new LinearLayout.LayoutParams(-1, dp(96)));
+
+        LinearLayout actions = row();
+        Button save = pillButton("Save journal");
+        save.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                DayGoal savedGoal = new DayGoal();
+                savedGoal.day = selectedDay;
+                savedGoal.focusTargetMinutes = parseInt(focusTarget.getText().toString(), 240);
+                savedGoal.distractionLimitMinutes = parseInt(distractionLimit.getText().toString(), 45);
+                savedGoal.skipped = skipped.isChecked();
+                db.saveDayGoal(savedGoal);
+
+                JournalEntry saved = new JournalEntry();
+                saved.day = selectedDay;
+                saved.intentions = intentions.getText().toString();
+                saved.goals = goals.getText().toString();
+                saved.notes = notes.getText().toString();
+                saved.reflections = reflections.getText().toString();
+                saved.summary = summary.getText().toString();
+                saved.status = "saved";
+                db.saveJournal(saved);
+                setStatus("Journal saved.");
+            }
+        });
+        Button copy = smallButton("Copy");
+        copy.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                copyText("Dayflow journal", journalText(cards, metrics, intentions.getText().toString(), goals.getText().toString(), notes.getText().toString(), reflections.getText().toString()));
+            }
+        });
+        actions.addView(save, new LinearLayout.LayoutParams(0, dp(44), 1));
+        actions.addView(copy, new LinearLayout.LayoutParams(dp(96), dp(44)));
+        panel.addView(actions);
+        content.addView(panel);
+    }
+
+    private void renderReview(List<TimelineCard> cards) {
+        LinearLayout summary = panel();
+        summary.addView(serif("Review", 30, Colors.TEXT));
+        summary.addView(text("Mark each block as focus, neutral, or distraction to train your day review.", 14, Colors.MUTED, false));
+        Map<String, Long> reviewed = db.reviewSummary(selectedDay);
+        summary.addView(text(reviewLine("Focus", reviewed) + "\n" + reviewLine("Neutral", reviewed) + "\n" + reviewLine("Distraction", reviewed), 14, Colors.TEXT, false));
+        content.addView(summary);
+
+        if (cards.isEmpty()) {
+            LinearLayout empty = panel();
+            empty.addView(serif("No cards to review", 24, Colors.TEXT));
+            empty.addView(text("Analyze a recording batch first, then come back here to rate the day.", 14, Colors.MUTED, false));
+            content.addView(empty);
+            return;
+        }
+
+        for (final TimelineCard card : cards) {
+            LinearLayout p = panel();
+            p.addView(text(TimeUtil.timeLabel(card.startMs) + " - " + TimeUtil.timeLabel(card.endMs) + " · " + card.category, 12, Colors.MUTED, true));
+            p.addView(serif(card.title, 24, Colors.TEXT));
+            p.addView(text(card.detailedSummary == null ? card.summary : card.detailedSummary, 14, Colors.TEXT, false));
+            LinearLayout row = row();
+            row.addView(ratingButton(card, "Focus"), new LinearLayout.LayoutParams(0, dp(40), 1));
+            row.addView(ratingButton(card, "Neutral"), new LinearLayout.LayoutParams(0, dp(40), 1));
+            row.addView(ratingButton(card, "Distraction"), new LinearLayout.LayoutParams(0, dp(40), 1));
+            p.addView(row);
+            content.addView(p);
+        }
+    }
+
+    private void renderCategories() {
+        LinearLayout intro = panel();
+        intro.addView(serif("Categories", 30, Colors.TEXT));
+        intro.addView(text("Tune the labels Dayflow uses when it builds timeline cards.", 14, Colors.MUTED, false));
+        content.addView(intro);
+
+        for (final Category category : db.fetchCategories()) {
+            LinearLayout p = panel();
+            p.addView(text(category.system ? "SYSTEM CATEGORY" : "CUSTOM CATEGORY", 12, Colors.MUTED, true));
+            final EditText name = field("Name", category.name, true);
+            final EditText color = field("Color hex", category.colorHex, true);
+            final EditText details = field("Details", category.details, false);
+            final EditText order = field("Sort order", String.valueOf(category.order), true);
+            final Switch idle = new Switch(this);
+            idle.setText("Idle category");
+            idle.setTextColor(Colors.TEXT);
+            idle.setTypeface(DayflowType.sans(this));
+            idle.setChecked(category.idle);
+            p.addView(name, new LinearLayout.LayoutParams(-1, dp(54)));
+            p.addView(color, new LinearLayout.LayoutParams(-1, dp(54)));
+            p.addView(details, new LinearLayout.LayoutParams(-1, dp(86)));
+            p.addView(order, new LinearLayout.LayoutParams(-1, dp(54)));
+            p.addView(idle);
+            LinearLayout actions = row();
+            Button save = pillButton("Save");
+            save.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View view) {
+                    category.name = name.getText().toString().trim();
+                    category.colorHex = color.getText().toString().trim();
+                    category.details = details.getText().toString();
+                    category.order = parseInt(order.getText().toString(), category.order);
+                    category.idle = idle.isChecked();
+                    db.saveCategory(category);
+                    setStatus("Category saved.");
+                    refresh();
+                }
+            });
+            actions.addView(save, new LinearLayout.LayoutParams(0, dp(40), 1));
+            if (!category.system) {
+                Button delete = smallButton("Delete");
+                delete.setOnClickListener(new View.OnClickListener() {
+                    @Override public void onClick(View view) {
+                        db.deleteCategory(category.id);
+                        setStatus("Category deleted.");
+                        refresh();
+                    }
+                });
+                actions.addView(delete, new LinearLayout.LayoutParams(dp(104), dp(40)));
+            }
+            p.addView(actions);
+            content.addView(p);
+        }
+
+        LinearLayout add = panel();
+        add.addView(serif("New category", 24, Colors.TEXT));
+        final EditText newName = field("Name", "", true);
+        final EditText newColor = field("Color hex", "#B984FF", true);
+        final EditText newDetails = field("Details", "", false);
+        add.addView(newName, new LinearLayout.LayoutParams(-1, dp(54)));
+        add.addView(newColor, new LinearLayout.LayoutParams(-1, dp(54)));
+        add.addView(newDetails, new LinearLayout.LayoutParams(-1, dp(86)));
+        Button create = pillButton("Add category");
+        create.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                Category category = new Category();
+                category.name = newName.getText().toString().trim();
+                category.colorHex = newColor.getText().toString().trim();
+                category.details = newDetails.getText().toString();
+                category.order = db.fetchCategories().size() + 1;
+                if (!category.name.isEmpty()) db.saveCategory(category);
+                setStatus("Category added.");
+                refresh();
+            }
+        });
+        add.addView(create, new LinearLayout.LayoutParams(-1, dp(44)));
+        content.addView(add);
+    }
+
     private void renderChat(DashboardMetrics metrics) {
         LinearLayout panel = panel();
         panel.addView(serif("Chat with your work journal", 28, Colors.TEXT));
@@ -254,45 +436,113 @@ public final class MainActivity extends Activity {
         });
         panel.addView(analyze, new LinearLayout.LayoutParams(-1, dp(44)));
 
+        Button reprocess = pillButton("Reprocess selected day");
+        reprocess.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                db.deleteTimelineDay(selectedDay);
+                setStatus("Reprocessing day...");
+                new Thread(new Runnable() {
+                    @Override public void run() {
+                        new AnalysisEngine(MainActivity.this).processNow();
+                        runOnUiThread(new Runnable() { @Override public void run() { setStatus("Day reprocessed."); refresh(); }});
+                    }
+                }).start();
+            }
+        });
+        panel.addView(reprocess, new LinearLayout.LayoutParams(-1, dp(44)));
+
         Button export = pillButton("Export today as Markdown");
         export.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) { copyText("Dayflow export", db.exportMarkdown(selectedDay)); }
         });
         panel.addView(export, new LinearLayout.LayoutParams(-1, dp(44)));
 
+        Button deleteDay = smallButton("Delete selected day cards");
+        deleteDay.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                new AlertDialog.Builder(MainActivity.this)
+                        .setTitle("Delete " + selectedDay + "?")
+                        .setMessage("Timeline cards for this day will be hidden. Raw screenshots follow the retention setting.")
+                        .setPositiveButton("Delete", new DialogInterface.OnClickListener() {
+                            @Override public void onClick(DialogInterface dialog, int which) {
+                                db.deleteTimelineDay(selectedDay);
+                                setStatus("Day deleted.");
+                                refresh();
+                            }
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .show();
+            }
+        });
+        panel.addView(deleteDay, new LinearLayout.LayoutParams(-1, dp(44)));
+
         panel.addView(text("AI provider", 13, Colors.MUTED, true));
+        final EditText provider = field("Provider: Heuristic or Gemini", prefs.provider(), true);
+        panel.addView(provider, new LinearLayout.LayoutParams(-1, dp(54)));
+
         final Switch cloud = new Switch(this);
         cloud.setText("Use Gemini vision when API key is set");
         cloud.setTextColor(Colors.TEXT);
+        cloud.setTypeface(DayflowType.sans(this));
         cloud.setChecked(prefs.useCloudAnalyzer());
         cloud.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                 prefs.setCloudAnalyzer(isChecked);
+                if (isChecked) provider.setText("Gemini");
             }
         });
         panel.addView(cloud);
 
-        final EditText apiKey = new EditText(this);
-        apiKey.setHint("Gemini API key");
-        apiKey.setSingleLine(true);
+        final EditText apiKey = field("Gemini API key", prefs.geminiApiKey(), true);
         apiKey.setText(prefs.geminiApiKey());
         panel.addView(apiKey, new LinearLayout.LayoutParams(-1, dp(56)));
 
-        final EditText model = new EditText(this);
-        model.setHint("Model");
-        model.setSingleLine(true);
+        final EditText model = field("Model", prefs.geminiModel(), true);
         model.setText(prefs.geminiModel());
         panel.addView(model, new LinearLayout.LayoutParams(-1, dp(56)));
+
+        final EditText ollama = field("Ollama endpoint", prefs.ollamaEndpoint(), true);
+        panel.addView(ollama, new LinearLayout.LayoutParams(-1, dp(56)));
 
         Button save = pillButton("Save provider settings");
         save.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
+                prefs.setProvider(provider.getText().toString());
                 prefs.setGeminiApiKey(apiKey.getText().toString());
                 prefs.setGeminiModel(model.getText().toString());
+                prefs.setOllamaEndpoint(ollama.getText().toString());
                 setStatus("Provider settings saved.");
             }
         });
         panel.addView(save, new LinearLayout.LayoutParams(-1, dp(44)));
+
+        panel.addView(text("Storage", 13, Colors.MUTED, true));
+        StorageStats stats = db.storageStats();
+        panel.addView(text(stats.screenshotCount + " screenshots · " + bytes(stats.screenshotBytes) + " · " + stats.cardCount + " cards · " + stats.batchCount + " batches", 14, Colors.TEXT, false));
+        final EditText retention = field("Screenshot retention days", String.valueOf(prefs.retentionDays()), true);
+        retention.setInputType(InputType.TYPE_CLASS_NUMBER);
+        panel.addView(retention, new LinearLayout.LayoutParams(-1, dp(54)));
+        Button purge = pillButton("Save retention and purge old screenshots");
+        purge.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                int days = parseInt(retention.getText().toString(), prefs.retentionDays());
+                prefs.setRetentionDays(days);
+                int count = db.purgeScreenshotsOlderThan(System.currentTimeMillis() - days * TimeUtil.DAY);
+                setStatus("Purged " + count + " screenshots.");
+                refresh();
+            }
+        });
+        panel.addView(purge, new LinearLayout.LayoutParams(-1, dp(44)));
+
+        panel.addView(text("Privacy blocklist", 13, Colors.MUTED, true));
+        ForegroundAppReader.AppSnapshot current = appReader.currentApp();
+        if (current.packageName != null) {
+            panel.addView(blockedSwitch(current));
+        }
+        for (ForegroundAppReader.AppSnapshot app : db.recentApps()) {
+            if (current.packageName != null && current.packageName.equals(app.packageName)) continue;
+            panel.addView(blockedSwitch(app));
+        }
         content.addView(panel);
     }
 
@@ -305,6 +555,99 @@ public final class MainActivity extends Activity {
             content.addView(p);
             addGap(10);
         }
+    }
+
+    private Button ratingButton(final TimelineCard card, final String rating) {
+        Button button = smallButton(rating);
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                db.saveReviewRating(card, rating);
+                setStatus("Marked " + rating.toLowerCase(Locale.US) + ".");
+                refresh();
+            }
+        });
+        return button;
+    }
+
+    private String reviewLine(String rating, Map<String, Long> reviewed) {
+        Long value = reviewed.get(rating);
+        return rating + ": " + TimeUtil.shortDuration(value == null ? 0 : value);
+    }
+
+    private String journalText(List<TimelineCard> cards, DashboardMetrics metrics, String intentions, String goals, String notes, String reflections) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("# Dayflow Journal · ").append(selectedDay).append("\n\n");
+        sb.append("Tracked: ").append(TimeUtil.shortDuration(metrics.trackedMs))
+                .append(" · Productive: ").append(metrics.productivePercent()).append("%")
+                .append(" · Distraction: ").append(TimeUtil.shortDuration(metrics.distractionMs)).append("\n\n");
+        sb.append("## Intentions\n").append(emptyDash(intentions)).append("\n\n");
+        sb.append("## Goals\n").append(emptyDash(goals)).append("\n\n");
+        sb.append("## Notes\n").append(emptyDash(notes)).append("\n\n");
+        sb.append("## Reflections\n").append(emptyDash(reflections)).append("\n\n");
+        sb.append("## Timeline\n");
+        int count = 0;
+        for (TimelineCard card : cards) {
+            if (count++ >= 10) break;
+            sb.append("- ").append(TimeUtil.timeLabel(card.startMs)).append(" · ")
+                    .append(card.category).append(" · ").append(card.title).append("\n");
+        }
+        return sb.toString();
+    }
+
+    private EditText field(String hint, String value, boolean singleLine) {
+        EditText edit = new EditText(this);
+        edit.setHint(hint);
+        edit.setText(value == null ? "" : value);
+        edit.setSingleLine(singleLine);
+        edit.setMinLines(singleLine ? 1 : 3);
+        edit.setGravity(singleLine ? Gravity.CENTER_VERTICAL : Gravity.TOP);
+        edit.setTextColor(Colors.TEXT);
+        edit.setHintTextColor(Colors.MUTED);
+        edit.setTextSize(14);
+        edit.setTypeface(DayflowType.sans(this));
+        edit.setPadding(dp(12), dp(6), dp(12), dp(6));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Colors.CARD_ALT);
+        bg.setStroke(1, Colors.STROKE);
+        bg.setCornerRadius(dp(12));
+        edit.setBackground(bg);
+        return edit;
+    }
+
+    private Switch blockedSwitch(final ForegroundAppReader.AppSnapshot app) {
+        Switch toggle = new Switch(this);
+        String label = app.label == null ? app.packageName : app.label;
+        toggle.setText(label + "\n" + app.packageName);
+        toggle.setTextColor(Colors.TEXT);
+        toggle.setTextSize(13);
+        toggle.setTypeface(DayflowType.sans(this));
+        toggle.setChecked(db.isBlockedApp(app.packageName));
+        toggle.setPadding(0, dp(4), 0, dp(4));
+        toggle.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                db.setBlockedApp(app.packageName, app.label, isChecked);
+                setStatus(isChecked ? "Privacy block enabled." : "Privacy block disabled.");
+            }
+        });
+        return toggle;
+    }
+
+    private static String emptyDash(String value) {
+        return value == null || value.trim().isEmpty() ? "-" : value.trim();
+    }
+
+    private static int parseInt(String value, int fallback) {
+        try {
+            return Integer.parseInt(value == null ? "" : value.trim());
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private static String bytes(long value) {
+        if (value >= 1024L * 1024L) return String.format(Locale.US, "%.1f MB", value / (1024f * 1024f));
+        if (value >= 1024L) return String.format(Locale.US, "%.1f KB", value / 1024f);
+        return value + " B";
     }
 
     private String standupText(List<TimelineCard> cards) {
@@ -409,13 +752,13 @@ public final class MainActivity extends Activity {
         v.setTextSize(sp);
         v.setTextColor(color);
         v.setLineSpacing(dp(2), 1.0f);
-        v.setTypeface(Typeface.create(Typeface.SANS_SERIF, caps ? Typeface.BOLD : Typeface.NORMAL));
+        v.setTypeface(DayflowType.sans(this, caps));
         return v;
     }
 
     private TextView serif(String value, int sp, int color) {
         TextView v = text(value, sp, color, false);
-        v.setTypeface(Typeface.create(Typeface.SERIF, Typeface.NORMAL));
+        v.setTypeface(DayflowType.serif(this));
         return v;
     }
 
