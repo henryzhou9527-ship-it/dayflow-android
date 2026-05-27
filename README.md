@@ -10,6 +10,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Builds 15-minute analysis batches and rewrites cards with a 45-minute lookback window.
 - Supports heuristic analysis, Gemini vision analysis, and Ollama local vision models such as `qwen3-vl:4b`.
 - Chat uses saved timeline cards, journal notes, category totals, and recent chat history, then answers through Gemini or Ollama when configured.
+- Chat renders Dayflow-style user/assistant bubbles, context chips, suggested prompts, markdown blocks, code blocks, copy actions, and lightweight feedback controls.
 - Provider settings include a backup provider so timeline analysis and chat can retry through another route before falling back locally.
 - Provider setup includes Android-native connection tests for Gemini and Ollama so the selected engine can be checked during onboarding or later in Settings.
 - Settings are organized into Dayflow-like Profile, Storage, Privacy, Providers, Export, and Other sections.

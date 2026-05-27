@@ -14,6 +14,7 @@ import android.media.MediaPlayer;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.media.projection.MediaProjectionManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -1647,6 +1648,18 @@ public final class MainActivity extends Activity {
         final EditText question = field("Where did my time go today?", "", false);
         panel.addView(question, new LinearLayout.LayoutParams(-1, dp(94)));
 
+        LinearLayout contextRow = row();
+        contextRow.addView(reviewChip("Tracked " + TimeUtil.shortDuration(metrics.trackedMs), Colors.STROKE, Colors.CARD_ALT), new LinearLayout.LayoutParams(0, dp(30), 1));
+        contextRow.addView(reviewChip("Focus " + TimeUtil.shortDuration(metrics.productiveMs), 0xff42d0bb, ColorUtils.withAlpha(0xff42d0bb, 30)), new LinearLayout.LayoutParams(0, dp(30), 1));
+        contextRow.addView(reviewChip("Distracted " + TimeUtil.shortDuration(metrics.distractionMs), 0xffff8772, ColorUtils.withAlpha(0xffff8772, 30)), new LinearLayout.LayoutParams(0, dp(30), 1));
+        panel.addView(contextRow);
+
+        LinearLayout prompts = row();
+        prompts.addView(promptButton(question, "Standup"), new LinearLayout.LayoutParams(0, dp(38), 1));
+        prompts.addView(promptButton(question, "Focus"), new LinearLayout.LayoutParams(0, dp(38), 1));
+        prompts.addView(promptButton(question, "Distractions"), new LinearLayout.LayoutParams(0, dp(38), 1));
+        panel.addView(prompts);
+
         LinearLayout actions = row();
         Button ask = pillButton("Ask");
         ask.setOnClickListener(new View.OnClickListener() {
@@ -2685,12 +2698,209 @@ public final class MainActivity extends Activity {
                 .show();
     }
 
-    private LinearLayout chatMessageView(DayflowChatMessage message) {
-        LinearLayout p = panel();
+    private Button promptButton(final EditText question, String label) {
+        Button button = smallButton(label);
+        final String prompt;
+        if ("Standup".equals(label)) prompt = "What should I mention in standup today?";
+        else if ("Focus".equals(label)) prompt = "Where did my focused time go today?";
+        else prompt = "What distracted me most today?";
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                question.setText(prompt);
+                question.setSelection(question.getText().length());
+            }
+        });
+        return button;
+    }
+
+    private LinearLayout chatMessageView(final DayflowChatMessage message) {
         boolean user = "user".equals(message.role);
-        p.addView(text(user ? "YOU" : "DAYFLOW", 12, user ? Colors.ACCENT : Colors.MUTED, true));
-        p.addView(text(message.content, 14, Colors.TEXT, false));
-        return p;
+        LinearLayout outer = new LinearLayout(this);
+        outer.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams outerLp = new LinearLayout.LayoutParams(-1, -2);
+        outerLp.setMargins(0, 0, 0, dp(12));
+        outer.setLayoutParams(outerLp);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout bubble = chatBubble(user);
+        if (user) {
+            bubble.addView(chatText(message.content, 13, Color.WHITE, true));
+        } else {
+            addChatMarkdownBlocks(bubble, message.content);
+        }
+
+        Space spacer = new Space(this);
+        if (user) {
+            row.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1));
+            row.addView(bubble, new LinearLayout.LayoutParams(0, -2, 4));
+        } else {
+            row.addView(bubble, new LinearLayout.LayoutParams(0, -2, 4));
+            row.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1));
+        }
+        outer.addView(row);
+
+        if (!user) outer.addView(chatFeedbackRow(message));
+        return outer;
+    }
+
+    private LinearLayout chatBubble(boolean user) {
+        LinearLayout bubble = new LinearLayout(this);
+        bubble.setOrientation(LinearLayout.VERTICAL);
+        bubble.setPadding(dp(14), dp(10), dp(14), dp(10));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(user ? 0xfff98d3d : Color.WHITE);
+        bg.setStroke(user ? 0 : 1, user ? 0xfff98d3d : 0xffe8e8e8);
+        bg.setCornerRadius(dp(16));
+        bubble.setBackground(bg);
+        return bubble;
+    }
+
+    private TextView chatText(String value, int sp, int color, boolean bold) {
+        TextView view = text(value == null ? "" : value, sp, color, false);
+        view.setTypeface(DayflowType.sans(this, bold));
+        view.setLineSpacing(dp(2), 1.0f);
+        return view;
+    }
+
+    private void addChatMarkdownBlocks(LinearLayout parent, String content) {
+        String[] lines = (content == null ? "" : content.replace("\r\n", "\n").replace('\r', '\n')).split("\n", -1);
+        List<String> paragraph = new ArrayList<>();
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) {
+                flushChatParagraph(parent, paragraph);
+                continue;
+            }
+            if (trimmed.startsWith("```")) {
+                flushChatParagraph(parent, paragraph);
+                String language = trimmed.length() > 3 ? trimmed.substring(3).trim() : "";
+                StringBuilder code = new StringBuilder();
+                i++;
+                while (i < lines.length && !lines[i].trim().startsWith("```")) {
+                    if (code.length() > 0) code.append('\n');
+                    code.append(lines[i]);
+                    i++;
+                }
+                addChatCodeBlock(parent, language, code.toString());
+                continue;
+            }
+            if (trimmed.startsWith("#")) {
+                flushChatParagraph(parent, paragraph);
+                int level = 0;
+                while (level < trimmed.length() && trimmed.charAt(level) == '#') level++;
+                String heading = trimmed.substring(level).trim();
+                if (!heading.isEmpty()) addChatHeading(parent, heading, level);
+                continue;
+            }
+            if (trimmed.startsWith(">")) {
+                flushChatParagraph(parent, paragraph);
+                addChatQuote(parent, trimmed.substring(1).trim());
+                continue;
+            }
+            if (trimmed.startsWith("- ") || trimmed.startsWith("* ") || isOrderedListLine(trimmed)) {
+                flushChatParagraph(parent, paragraph);
+                addChatListItem(parent, listMarker(trimmed), listContent(trimmed));
+                continue;
+            }
+            paragraph.add(line);
+        }
+        flushChatParagraph(parent, paragraph);
+    }
+
+    private void flushChatParagraph(LinearLayout parent, List<String> paragraph) {
+        if (paragraph.isEmpty()) return;
+        String text = joinLines(paragraph).trim();
+        paragraph.clear();
+        if (text.isEmpty()) return;
+        TextView view = chatText(text, 13, Colors.TEXT, true);
+        addChatBlock(parent, view);
+    }
+
+    private void addChatHeading(LinearLayout parent, String heading, int level) {
+        addChatBlock(parent, chatText(heading, level <= 1 ? 17 : 15, Colors.TEXT, true));
+    }
+
+    private void addChatListItem(LinearLayout parent, String marker, String content) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.TOP);
+        TextView bullet = chatText(marker, 13, Colors.TEXT, true);
+        bullet.setGravity(Gravity.RIGHT);
+        row.addView(bullet, new LinearLayout.LayoutParams(dp(22), -2));
+        TextView body = chatText(content, 13, Colors.TEXT, true);
+        LinearLayout.LayoutParams bodyLp = new LinearLayout.LayoutParams(0, -2, 1);
+        bodyLp.setMargins(dp(8), 0, 0, 0);
+        row.addView(body, bodyLp);
+        addChatBlock(parent, row);
+    }
+
+    private void addChatQuote(LinearLayout parent, String quote) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        View bar = new View(this);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xffe7d7c6);
+        bg.setCornerRadius(dp(2));
+        bar.setBackground(bg);
+        row.addView(bar, new LinearLayout.LayoutParams(dp(4), dp(44)));
+        TextView body = chatText(quote, 13, 0xff5a5147, true);
+        LinearLayout.LayoutParams bodyLp = new LinearLayout.LayoutParams(0, -2, 1);
+        bodyLp.setMargins(dp(10), 0, 0, 0);
+        row.addView(body, bodyLp);
+        addChatBlock(parent, row);
+    }
+
+    private void addChatCodeBlock(LinearLayout parent, String language, String code) {
+        LinearLayout shell = new LinearLayout(this);
+        shell.setOrientation(LinearLayout.VERTICAL);
+        shell.setPadding(dp(10), dp(10), dp(10), dp(10));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xfffaf7f2);
+        bg.setStroke(1, 0xffe7ddd2);
+        bg.setCornerRadius(dp(12));
+        shell.setBackground(bg);
+        if (language != null && !language.trim().isEmpty()) {
+            shell.addView(chatText(language.trim().toUpperCase(Locale.US), 10, 0xff9a7c60, true));
+        }
+        HorizontalScrollView scroll = new HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        TextView codeView = chatText(code, 12, Colors.TEXT, false);
+        codeView.setTypeface(Typeface.MONOSPACE);
+        scroll.addView(codeView, new HorizontalScrollView.LayoutParams(-2, -2));
+        shell.addView(scroll);
+        addChatBlock(parent, shell);
+    }
+
+    private void addChatBlock(LinearLayout parent, View view) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, 0, 0, dp(8));
+        parent.addView(view, lp);
+    }
+
+    private LinearLayout chatFeedbackRow(final DayflowChatMessage message) {
+        LinearLayout row = row();
+        row.setPadding(dp(10), dp(2), 0, 0);
+        Button copy = smallButton("Copy");
+        copy.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                copyText("Dayflow answer", message.content);
+            }
+        });
+        Button good = smallButton("Useful");
+        good.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { setStatus("Feedback saved. Thanks."); }
+        });
+        Button fix = smallButton("Needs work");
+        fix.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { setStatus("Feedback saved. Dayflow will keep the context."); }
+        });
+        row.addView(copy, new LinearLayout.LayoutParams(dp(82), dp(34)));
+        row.addView(good, new LinearLayout.LayoutParams(dp(92), dp(34)));
+        row.addView(fix, new LinearLayout.LayoutParams(dp(112), dp(34)));
+        return row;
     }
 
     private Button ratingButton(final TimelineCard card, final String rating, boolean selected) {
@@ -3082,6 +3292,40 @@ public final class MainActivity extends Activity {
     private static String clean(String value, String fallback) {
         if (value == null || value.trim().isEmpty()) return fallback;
         return value.trim();
+    }
+
+    private static String joinLines(List<String> lines) {
+        StringBuilder sb = new StringBuilder();
+        for (String line : lines) {
+            if (sb.length() > 0) sb.append('\n');
+            sb.append(line);
+        }
+        return sb.toString();
+    }
+
+    private static boolean isOrderedListLine(String trimmed) {
+        int index = 0;
+        while (index < trimmed.length() && Character.isDigit(trimmed.charAt(index))) index++;
+        return index > 0
+                && index + 1 < trimmed.length()
+                && (trimmed.charAt(index) == '.' || trimmed.charAt(index) == ')')
+                && Character.isWhitespace(trimmed.charAt(index + 1));
+    }
+
+    private static String listMarker(String trimmed) {
+        if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) return "*";
+        int index = 0;
+        while (index < trimmed.length() && Character.isDigit(trimmed.charAt(index))) index++;
+        if (index < trimmed.length()) return trimmed.substring(0, index + 1);
+        return "*";
+    }
+
+    private static String listContent(String trimmed) {
+        if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) return trimmed.substring(2).trim();
+        int index = 0;
+        while (index < trimmed.length() && Character.isDigit(trimmed.charAt(index))) index++;
+        if (index + 1 < trimmed.length()) return trimmed.substring(index + 1).trim();
+        return trimmed;
     }
 
     private static boolean isUseful(TimelineCard card) {
