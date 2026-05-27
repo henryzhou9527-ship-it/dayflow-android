@@ -43,6 +43,29 @@ final class TimeUtil {
         }
     }
 
+    static long weekStartMs(long timestampMs) {
+        Calendar cal = Calendar.getInstance();
+        cal.setTimeInMillis(timestampMs);
+        if (cal.get(Calendar.HOUR_OF_DAY) < 4) {
+            cal.add(Calendar.DATE, -1);
+        }
+        while (cal.get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) {
+            cal.add(Calendar.DATE, -1);
+        }
+        cal.set(Calendar.HOUR_OF_DAY, 4);
+        cal.set(Calendar.MINUTE, 0);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+        return cal.getTimeInMillis();
+    }
+
+    static String weekLabel(long weekStartMs) {
+        SimpleDateFormat format = new SimpleDateFormat("MMM d", Locale.US);
+        String start = format.format(new Date(weekStartMs));
+        String end = format.format(new Date(weekStartMs + 6 * DAY));
+        return start + " - " + end;
+    }
+
     static String timeLabel(long timestampMs) {
         SimpleDateFormat format = new SimpleDateFormat("h:mm a", Locale.US);
         format.setTimeZone(TimeZone.getDefault());

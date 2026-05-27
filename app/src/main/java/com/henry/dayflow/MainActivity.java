@@ -34,6 +34,7 @@ import android.graphics.drawable.GradientDrawable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -47,6 +48,7 @@ public final class MainActivity extends Activity {
     private ForegroundAppReader appReader;
     private String selectedTab = "Timeline";
     private String selectedDay;
+    private long selectedWeekStartMs;
     private LinearLayout content;
     private LinearLayout tabRow;
     private TextView statusText;
@@ -58,6 +60,7 @@ public final class MainActivity extends Activity {
         prefs = new DayflowPrefs(this);
         appReader = new ForegroundAppReader(this);
         selectedDay = TimeUtil.dayKey(System.currentTimeMillis());
+        selectedWeekStartMs = TimeUtil.weekStartMs(System.currentTimeMillis());
         if (!prefs.didOnboard()) selectedTab = "Onboarding";
         maybeRequestNotifications();
         buildUi();
@@ -508,11 +511,109 @@ public final class MainActivity extends Activity {
     }
 
     private void renderWeekly() {
-        long start = TimeUtil.dayStartMs(TimeUtil.dayKey(System.currentTimeMillis() - 6 * TimeUtil.DAY));
-        List<TimelineCard> cards = db.fetchTimelineCardsRange(start, start + 7 * TimeUtil.DAY);
+        long start = selectedWeekStartMs <= 0 ? TimeUtil.weekStartMs(System.currentTimeMillis()) : selectedWeekStartMs;
+        long end = start + 7 * TimeUtil.DAY;
+        List<TimelineCard> cards = db.fetchTimelineCardsRange(start, end);
+        List<TimelineCard> previousCards = db.fetchTimelineCardsRange(start - 7 * TimeUtil.DAY, start);
+
+        LinearLayout actions = row();
+        Button previous = smallButton("‹");
+        previous.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                selectedWeekStartMs -= 7 * TimeUtil.DAY;
+                refresh();
+            }
+        });
+        Button current = pillButton(TimeUtil.weekLabel(start));
+        current.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                selectedWeekStartMs = TimeUtil.weekStartMs(System.currentTimeMillis());
+                refresh();
+            }
+        });
+        Button next = smallButton("›");
+        next.setEnabled(start + 7 * TimeUtil.DAY < TimeUtil.weekStartMs(System.currentTimeMillis()) + 7 * TimeUtil.DAY);
+        next.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                selectedWeekStartMs += 7 * TimeUtil.DAY;
+                refresh();
+            }
+        });
+        actions.addView(previous, new LinearLayout.LayoutParams(dp(44), dp(38)));
+        actions.addView(current, new LinearLayout.LayoutParams(0, dp(38), 1));
+        actions.addView(next, new LinearLayout.LayoutParams(dp(44), dp(38)));
+        content.addView(actions);
+
         WeeklyCanvasView weekly = new WeeklyCanvasView(this);
-        weekly.setCards(cards);
+        weekly.setCards(start, cards);
         content.addView(weekly, new LinearLayout.LayoutParams(-1, dp(520)));
+        addGap(14);
+        renderWeeklyInsights(start, cards, previousCards);
+    }
+
+    private void renderWeeklyInsights(long weekStart, List<TimelineCard> cards, List<TimelineCard> previousCards) {
+        DashboardMetrics metrics = metricsFor(cards);
+        DashboardMetrics previous = metricsFor(previousCards);
+
+        LinearLayout summary = panel();
+        summary.addView(text("WEEKLY SUMMARY", 12, Colors.MUTED, true));
+        summary.addView(serif("This week's operating picture", 28, Colors.TEXT));
+        if (cards.isEmpty()) {
+            summary.addView(text("No analyzed cards in this week yet. Dayflow unlocks the full weekly breakdown after enough timeline history exists.", 14, Colors.MUTED, false));
+            content.addView(summary);
+            return;
+        }
+
+        long delta = metrics.trackedMs - previous.trackedMs;
+        String deltaText = (delta >= 0 ? "+" : "-") + TimeUtil.shortDuration(Math.abs(delta)) + " vs previous week";
+        TimelineCard longest = longestUsefulCard(cards);
+        summary.addView(text(
+                "Tracked " + TimeUtil.shortDuration(metrics.trackedMs) +
+                        " · " + metrics.productivePercent() + "% productive · " +
+                        TimeUtil.shortDuration(metrics.distractionMs) + " distraction\n" +
+                        deltaText +
+                        "\nLongest useful block: " + (longest == null ? "none yet" : longest.title + " · " + TimeUtil.shortDuration(longest.durationMs())),
+                14, Colors.TEXT, false));
+        summary.addView(text("Busiest day: " + busiestDayLabel(weekStart, cards), 14, Colors.MUTED, false));
+        content.addView(summary);
+
+        LinearLayout suggestions = panel();
+        suggestions.addView(text("1:1 SUGGESTIONS", 12, Colors.MUTED, true));
+        suggestions.addView(serif("Top level updates", 26, Colors.TEXT));
+        int categoryCount = 0;
+        for (Map.Entry<String, Long> entry : DayflowDatabase.sortedByDuration(metrics.categoryMs)) {
+            if (categoryCount++ >= 4) break;
+            suggestions.addView(text("• " + entry.getKey() + ": " + TimeUtil.shortDuration(entry.getValue()) + " across " + countCardsInCategory(cards, entry.getKey()) + " cards.", 14, Colors.TEXT, false));
+        }
+        suggestions.addView(serif("Next steps", 24, Colors.ACCENT));
+        int nextCount = 0;
+        for (TimelineCard card : usefulCardsByDuration(cards)) {
+            if (nextCount++ >= 3) break;
+            suggestions.addView(text("• Pick up from " + card.title + ": " + shortText(card.summary, 120), 14, Colors.TEXT, false));
+        }
+        if (nextCount == 0) {
+            suggestions.addView(text("• Build one focused block this week so Dayflow has a useful thread to resume.", 14, Colors.TEXT, false));
+        }
+        content.addView(suggestions);
+
+        LinearLayout apps = panel();
+        apps.addView(text("APPLICATION INTERACTIONS", 12, Colors.MUTED, true));
+        apps.addView(serif("Where the week moved", 26, Colors.TEXT));
+        List<Map.Entry<String, Long>> appsByDuration = topEntries(metrics.appMs, 5);
+        for (Map.Entry<String, Long> entry : appsByDuration) {
+            apps.addView(text("• " + entry.getKey() + ": " + TimeUtil.shortDuration(entry.getValue()), 14, Colors.TEXT, false));
+        }
+        if (appsByDuration.isEmpty()) {
+            apps.addView(text("App labels appear after Usage Access is enabled and new batches are captured.", 14, Colors.MUTED, false));
+        }
+        Map<String, Long> transitions = appTransitions(cards);
+        if (!transitions.isEmpty()) {
+            apps.addView(serif("Common switches", 24, Colors.ACCENT));
+            for (Map.Entry<String, Long> entry : topEntries(transitions, 4)) {
+                apps.addView(text("• " + entry.getKey() + " · " + entry.getValue() + "x", 14, Colors.TEXT, false));
+            }
+        }
+        content.addView(apps);
     }
 
     private void renderJournal(final List<TimelineCard> cards, final DashboardMetrics metrics) {
@@ -1113,6 +1214,125 @@ public final class MainActivity extends Activity {
         return rating + ": " + TimeUtil.shortDuration(value == null ? 0 : value);
     }
 
+    private DashboardMetrics metricsFor(List<TimelineCard> cards) {
+        DashboardMetrics metrics = new DashboardMetrics();
+        metrics.cardCount = cards == null ? 0 : cards.size();
+        if (cards == null) return metrics;
+        for (TimelineCard card : cards) {
+            long duration = card.durationMs();
+            metrics.trackedMs += duration;
+            String category = card.category == null ? "Work" : card.category;
+            addDuration(metrics.categoryMs, category, duration);
+            if (isUseful(card)) metrics.productiveMs += duration;
+            if (isDistraction(card)) metrics.distractionMs += duration;
+            String app = appFromMetadata(card.metadata);
+            if (app != null) addDuration(metrics.appMs, app, duration);
+        }
+        return metrics;
+    }
+
+    private TimelineCard longestUsefulCard(List<TimelineCard> cards) {
+        TimelineCard best = null;
+        for (TimelineCard card : cards) {
+            if (!isUseful(card)) continue;
+            if (best == null || card.durationMs() > best.durationMs()) best = card;
+        }
+        return best;
+    }
+
+    private List<TimelineCard> usefulCardsByDuration(List<TimelineCard> cards) {
+        List<TimelineCard> copy = new ArrayList<>();
+        for (TimelineCard card : cards) {
+            if (isUseful(card)) copy.add(card);
+        }
+        java.util.Collections.sort(copy, new java.util.Comparator<TimelineCard>() {
+            @Override public int compare(TimelineCard a, TimelineCard b) {
+                return Long.compare(b.durationMs(), a.durationMs());
+            }
+        });
+        return copy;
+    }
+
+    private String busiestDayLabel(long weekStart, List<TimelineCard> cards) {
+        long[] totals = new long[7];
+        for (TimelineCard card : cards) {
+            int day = (int) ((card.startMs - weekStart) / TimeUtil.DAY);
+            if (day >= 0 && day < totals.length) totals[day] += card.durationMs();
+        }
+        int best = 0;
+        for (int i = 1; i < totals.length; i++) {
+            if (totals[i] > totals[best]) best = i;
+        }
+        String[] labels = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+        return labels[best] + " · " + TimeUtil.shortDuration(totals[best]);
+    }
+
+    private int countCardsInCategory(List<TimelineCard> cards, String category) {
+        int count = 0;
+        for (TimelineCard card : cards) {
+            if (category != null && category.equals(card.category)) count++;
+        }
+        return count;
+    }
+
+    private Map<String, Long> appTransitions(List<TimelineCard> cards) {
+        List<TimelineCard> copy = new ArrayList<>(cards);
+        java.util.Collections.sort(copy, new java.util.Comparator<TimelineCard>() {
+            @Override public int compare(TimelineCard a, TimelineCard b) {
+                return Long.compare(a.startMs, b.startMs);
+            }
+        });
+        Map<String, Long> transitions = new LinkedHashMap<>();
+        String previous = null;
+        for (TimelineCard card : copy) {
+            String app = appFromMetadata(card.metadata);
+            if (app == null || app.trim().isEmpty()) continue;
+            if (previous != null && !previous.equals(app)) {
+                addDuration(transitions, previous + " → " + app, 1);
+            }
+            previous = app;
+        }
+        return transitions;
+    }
+
+    private <K> List<Map.Entry<K, Long>> topEntries(Map<K, Long> map, int limit) {
+        List<Map.Entry<K, Long>> entries = DayflowDatabase.sortedByDuration(map);
+        if (entries.size() <= limit) return entries;
+        return entries.subList(0, limit);
+    }
+
+    private static void addDuration(Map<String, Long> map, String key, long value) {
+        Long current = map.get(key);
+        map.put(key, current == null ? value : current + value);
+    }
+
+    private static boolean isUseful(TimelineCard card) {
+        return !isDistraction(card) && !isIdle(card);
+    }
+
+    private static boolean isDistraction(TimelineCard card) {
+        return normalizedCategory(card).contains("distraction");
+    }
+
+    private static boolean isIdle(TimelineCard card) {
+        return normalizedCategory(card).contains("idle");
+    }
+
+    private static String normalizedCategory(TimelineCard card) {
+        return (card.category == null ? "" : card.category).toLowerCase(Locale.US);
+    }
+
+    private static String appFromMetadata(String metadata) {
+        if (metadata == null) return null;
+        String marker = "app=";
+        int start = metadata.indexOf(marker);
+        if (start < 0) return null;
+        int end = metadata.indexOf(';', start);
+        String app = end > start ? metadata.substring(start + marker.length(), end) : metadata.substring(start + marker.length());
+        app = app.trim();
+        return app.isEmpty() ? null : app;
+    }
+
     private String journalText(List<TimelineCard> cards, DashboardMetrics metrics, String intentions, String goals, String notes, String reflections) {
         StringBuilder sb = new StringBuilder();
         sb.append("# Dayflow Journal · ").append(selectedDay).append("\n\n");
@@ -1173,6 +1393,12 @@ public final class MainActivity extends Activity {
 
     private static String emptyDash(String value) {
         return value == null || value.trim().isEmpty() ? "-" : value.trim();
+    }
+
+    private static String shortText(String value, int max) {
+        String text = value == null || value.trim().isEmpty() ? "Continue the most recent useful thread." : value.trim();
+        if (text.length() <= max) return text;
+        return text.substring(0, Math.max(0, max - 1)).trim() + "…";
     }
 
     private static int parseInt(String value, int fallback) {

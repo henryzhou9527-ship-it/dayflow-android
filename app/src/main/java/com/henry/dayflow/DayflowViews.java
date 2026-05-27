@@ -329,13 +329,15 @@ final class DailyWorkflowView extends View {
 final class WeeklyCanvasView extends View {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private List<TimelineCard> cards = new ArrayList<>();
+    private long weekStartMs = TimeUtil.weekStartMs(System.currentTimeMillis());
 
     WeeklyCanvasView(Context context) {
         super(context);
         setMinimumHeight(dp(520));
     }
 
-    void setCards(List<TimelineCard> cards) {
+    void setCards(long weekStartMs, List<TimelineCard> cards) {
+        this.weekStartMs = weekStartMs;
         this.cards = cards == null ? new ArrayList<TimelineCard>() : cards;
         invalidate();
     }
@@ -344,6 +346,7 @@ final class WeeklyCanvasView extends View {
     protected void onDraw(Canvas canvas) {
         drawPanel(canvas, 0, 0, getWidth(), dp(170));
         drawSerif(canvas, "Focus and distraction heat map", dp(18), dp(38), dp(23), Colors.TEXT);
+        drawSans(canvas, TimeUtil.weekLabel(weekStartMs), getWidth() - dp(132), dp(38), dp(12), Colors.MUTED);
         drawHeatmap(canvas, dp(18), dp(62), getWidth() - dp(36), dp(78));
         drawPanel(canvas, 0, dp(190), getWidth(), dp(300));
         drawSerif(canvas, "Time distribution", dp(18), dp(230), dp(23), Colors.TEXT);
@@ -351,8 +354,7 @@ final class WeeklyCanvasView extends View {
     }
 
     private void drawHeatmap(Canvas c, float x, float y, float w, float h) {
-        long now = System.currentTimeMillis();
-        long start = TimeUtil.dayStartMs(TimeUtil.dayKey(now - 6 * TimeUtil.DAY));
+        long start = weekStartMs;
         float cellW = w / 96f;
         float cellH = h / 7f;
         for (int d = 0; d < 7; d++) {
@@ -372,11 +374,11 @@ final class WeeklyCanvasView extends View {
     }
 
     private void drawDistribution(Canvas c, float x, float y, float w, float h) {
-        long now = System.currentTimeMillis();
-        long start = TimeUtil.dayStartMs(TimeUtil.dayKey(now - 4 * TimeUtil.DAY));
-        for (int d = 0; d < 5; d++) {
+        long start = weekStartMs;
+        String[] labels = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+        for (int d = 0; d < 7; d++) {
             float yy = y + d * dp(34);
-            drawSans(c, "Day " + (d + 1), x, yy + dp(13), dp(11), Colors.TEXT);
+            drawSans(c, labels[d], x, yy + dp(13), dp(11), Colors.TEXT);
             float cursor = x + dp(58);
             long dayStart = start + d * TimeUtil.DAY;
             for (TimelineCard card : cards) {
