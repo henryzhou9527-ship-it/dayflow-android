@@ -57,6 +57,9 @@ public final class MainActivity extends Activity {
     private static final int REQ_NOTIFICATIONS = 1002;
     private static final int REQ_EXPORT_MARKDOWN = 1003;
     private static final int DAILY_REQUIRED_BATCHES = 20;
+    private static final String[] CATEGORY_COLOR_PRESETS = {
+            "#B984FF", "#6AADFF", "#FFAE8C", "#FF5950", "#42D0BB", "#F96E00", "#90DDF0", "#A0AEC0"
+    };
 
     private DayflowDatabase db;
     private DayflowPrefs prefs;
@@ -1570,14 +1573,17 @@ public final class MainActivity extends Activity {
     }
 
     private void renderCategories() {
+        final List<Category> categories = db.fetchCategories();
+        final List<TimelineCard> dayCards = db.fetchTimelineCards(selectedDay);
         LinearLayout intro = panel();
         intro.addView(serif("Categories", 30, Colors.TEXT));
-        intro.addView(text("Tune the labels Dayflow uses when it builds timeline cards.", 14, Colors.MUTED, false));
+        intro.addView(text("Tune the labels Dayflow uses when it builds timeline cards. Colors and descriptions also guide daily goals, review, charts, and chat context.", 14, Colors.MUTED, false));
+        intro.addView(categoryPillStrip(categories));
         content.addView(intro);
 
-        for (final Category category : db.fetchCategories()) {
+        for (final Category category : categories) {
             LinearLayout p = panel();
-            p.addView(text(category.system ? "SYSTEM CATEGORY" : "CUSTOM CATEGORY", 12, Colors.MUTED, true));
+            p.addView(categoryEditorHeader(category, countCardsInCategory(dayCards, category.name)));
             final EditText name = field("Name", category.name, true);
             final EditText color = field("Color hex", category.colorHex, true);
             final EditText details = field("Details", category.details, false);
@@ -1589,6 +1595,7 @@ public final class MainActivity extends Activity {
             idle.setChecked(category.idle);
             p.addView(name, new LinearLayout.LayoutParams(-1, dp(54)));
             p.addView(color, new LinearLayout.LayoutParams(-1, dp(54)));
+            p.addView(colorPresetRow(color));
             p.addView(details, new LinearLayout.LayoutParams(-1, dp(86)));
             p.addView(order, new LinearLayout.LayoutParams(-1, dp(54)));
             p.addView(idle);
@@ -1629,6 +1636,7 @@ public final class MainActivity extends Activity {
         final EditText newDetails = field("Details", "", false);
         add.addView(newName, new LinearLayout.LayoutParams(-1, dp(54)));
         add.addView(newColor, new LinearLayout.LayoutParams(-1, dp(54)));
+        add.addView(colorPresetRow(newColor));
         add.addView(newDetails, new LinearLayout.LayoutParams(-1, dp(86)));
         Button create = pillButton("Add category");
         create.setOnClickListener(new View.OnClickListener() {
@@ -1645,6 +1653,100 @@ public final class MainActivity extends Activity {
         });
         add.addView(create, new LinearLayout.LayoutParams(-1, dp(44)));
         content.addView(add);
+    }
+
+    private HorizontalScrollView categoryPillStrip(List<Category> categories) {
+        HorizontalScrollView scroll = new HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout strip = new LinearLayout(this);
+        strip.setOrientation(LinearLayout.HORIZONTAL);
+        strip.setPadding(0, dp(12), 0, dp(4));
+        scroll.addView(strip, new HorizontalScrollView.LayoutParams(-2, dp(54)));
+        for (Category category : categories) {
+            TextView pill = categoryPill(category.name, category.colorHex, category.idle, false);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(36));
+            lp.setMargins(0, 0, dp(8), 0);
+            strip.addView(pill, lp);
+        }
+        return scroll;
+    }
+
+    private LinearLayout categoryEditorHeader(Category category, int countToday) {
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(0, 0, 0, dp(10));
+
+        TextView swatch = new TextView(this);
+        GradientDrawable swatchBg = new GradientDrawable();
+        swatchBg.setColor(parseColor(category.colorHex, Colors.colorForCategory(category.name)));
+        swatchBg.setCornerRadius(dp(8));
+        swatchBg.setStroke(1, ColorUtils.withAlpha(Colors.TEXT, 42));
+        swatch.setBackground(swatchBg);
+        header.addView(swatch, new LinearLayout.LayoutParams(dp(28), dp(38)));
+
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        copy.setPadding(dp(10), 0, 0, 0);
+        copy.addView(text(category.name, 16, Colors.TEXT, false));
+        String label = (category.system ? "System" : "Custom") + (category.idle ? " · Idle" : "") + " · " + countToday + " today";
+        copy.addView(text(label, 11, Colors.MUTED, true));
+        header.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
+
+        header.addView(categoryPill(category.name, category.colorHex, category.idle, true), new LinearLayout.LayoutParams(-2, dp(34)));
+        return header;
+    }
+
+    private HorizontalScrollView colorPresetRow(final EditText target) {
+        HorizontalScrollView scroll = new HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout strip = new LinearLayout(this);
+        strip.setOrientation(LinearLayout.HORIZONTAL);
+        strip.setPadding(0, dp(4), 0, dp(10));
+        scroll.addView(strip, new HorizontalScrollView.LayoutParams(-2, dp(52)));
+        for (final String hex : CATEGORY_COLOR_PRESETS) {
+            TextView swatch = new TextView(this);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setShape(GradientDrawable.OVAL);
+            bg.setColor(parseColor(hex, Colors.ACCENT));
+            bg.setStroke(2, Color.WHITE);
+            swatch.setBackground(bg);
+            swatch.setContentDescription("Use color " + hex);
+            swatch.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View view) {
+                    target.setText(hex);
+                    target.setSelection(target.getText().length());
+                }
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(34), dp(34));
+            lp.setMargins(0, 0, dp(10), 0);
+            strip.addView(swatch, lp);
+        }
+        return scroll;
+    }
+
+    private TextView categoryPill(String name, String colorHex, boolean idle, boolean selected) {
+        int color = parseColor(colorHex, Colors.colorForCategory(name));
+        TextView pill = text("  " + clean(name, "Category") + "  ", 12, Colors.TEXT, false);
+        pill.setGravity(Gravity.CENTER);
+        pill.setSingleLine(true);
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                selected ? new int[]{0xfffffdf8, 0xffffe8d3} : new int[]{Color.WHITE, Color.WHITE});
+        bg.setCornerRadius(dp(7));
+        bg.setStroke(idle ? 2 : 1, selected ? 0xfffbbb80 : ColorUtils.withAlpha(color, idle ? 150 : 210));
+        pill.setBackground(bg);
+        pill.setCompoundDrawablesWithIntrinsicBounds(colorDot(color), null, null, null);
+        pill.setCompoundDrawablePadding(dp(7));
+        return pill;
+    }
+
+    private GradientDrawable colorDot(int color) {
+        GradientDrawable dot = new GradientDrawable();
+        dot.setShape(GradientDrawable.OVAL);
+        dot.setColor(color);
+        dot.setStroke(1, Color.WHITE);
+        dot.setSize(dp(10), dp(10));
+        return dot;
     }
 
     private void renderChat(DashboardMetrics metrics) {
@@ -2685,27 +2787,98 @@ public final class MainActivity extends Activity {
     }
 
     private void showCategoryPicker(final TimelineCard card) {
-        final List<Category> categories = db.fetchCategories();
+        final List<Category> categories = orderedCategoriesForPicker(db.fetchCategories(), card.category);
         if (categories.isEmpty()) {
             setStatus("No categories available.");
             return;
         }
-        CharSequence[] labels = new CharSequence[categories.size()];
-        for (int i = 0; i < categories.size(); i++) {
-            labels[i] = categories.get(i).name;
+
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout sheet = new LinearLayout(this);
+        sheet.setOrientation(LinearLayout.VERTICAL);
+        sheet.setPadding(dp(14), dp(14), dp(14), dp(8));
+        scroll.addView(sheet);
+        sheet.addView(serif("Move card", 24, Colors.TEXT));
+        sheet.addView(text(TimeUtil.timeLabel(card.startMs) + " - " + TimeUtil.timeLabel(card.endMs) + "\n" + card.title, 13, Colors.MUTED, false));
+
+        final AlertDialog[] dialogRef = new AlertDialog[1];
+        for (final Category category : categories) {
+            sheet.addView(categoryChoiceRow(card, category, normalized(category.name).equals(normalized(card.category)), dialogRef));
         }
-        new AlertDialog.Builder(this)
+
+        Button edit = smallButton("Edit category descriptions");
+        edit.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                if (dialogRef[0] != null) dialogRef[0].dismiss();
+                selectedTab = "Categories";
+                refresh();
+            }
+        });
+        sheet.addView(edit, new LinearLayout.LayoutParams(-1, dp(42)));
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Move card to category")
-                .setItems(labels, new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface dialog, int which) {
-                        Category category = categories.get(which);
-                        db.updateTimelineCardCategory(card.id, category.name);
-                        setStatus("Card moved to " + category.name + ".");
-                        refresh();
-                    }
-                })
+                .setView(scroll)
                 .setNegativeButton("Cancel", null)
-                .show();
+                .create();
+        dialogRef[0] = dialog;
+        dialog.show();
+    }
+
+    private View categoryChoiceRow(final TimelineCard card, final Category category, boolean selected, final AlertDialog[] dialogRef) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(10), dp(9), dp(10), dp(9));
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                selected ? new int[]{0xfffffdf8, 0xffffe8d3} : new int[]{0xffffffff, 0xfffefefe});
+        int color = parseColor(category.colorHex, Colors.colorForCategory(category.name));
+        bg.setCornerRadius(dp(8));
+        bg.setStroke(selected ? 2 : 1, selected ? 0xfffbbb80 : ColorUtils.withAlpha(color, 120));
+        row.setBackground(bg);
+
+        TextView swatch = new TextView(this);
+        GradientDrawable swatchBg = new GradientDrawable();
+        swatchBg.setShape(GradientDrawable.OVAL);
+        swatchBg.setColor(color);
+        swatchBg.setStroke(1, Color.WHITE);
+        swatch.setBackground(swatchBg);
+        row.addView(swatch, new LinearLayout.LayoutParams(dp(14), dp(14)));
+
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        copy.setPadding(dp(10), 0, 0, 0);
+        copy.addView(text(category.name, 14, Colors.TEXT, false));
+        String detail = clean(category.details, "Add details so Dayflow can classify this more accurately.");
+        copy.addView(text(shortText(detail, 90), 11, Colors.MUTED, false));
+        row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
+
+        if (selected) row.addView(text("Selected", 11, Colors.ACCENT, true), new LinearLayout.LayoutParams(-2, -2));
+
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                if (dialogRef[0] != null) dialogRef[0].dismiss();
+                db.updateTimelineCardCategory(card.id, category.name);
+                setStatus("Card moved to " + category.name + ".");
+                refresh();
+            }
+        });
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(8), 0, 0);
+        row.setLayoutParams(lp);
+        return row;
+    }
+
+    private List<Category> orderedCategoriesForPicker(List<Category> categories, String currentCategory) {
+        List<Category> ordered = new ArrayList<>();
+        String current = normalized(currentCategory);
+        for (Category category : categories) {
+            if (normalized(category.name).equals(current)) ordered.add(category);
+        }
+        for (Category category : categories) {
+            if (!normalized(category.name).equals(current)) ordered.add(category);
+        }
+        return ordered;
     }
 
     private void confirmDeleteCard(final TimelineCard card) {
@@ -3414,6 +3587,10 @@ public final class MainActivity extends Activity {
     private static String clean(String value, String fallback) {
         if (value == null || value.trim().isEmpty()) return fallback;
         return value.trim();
+    }
+
+    private static String normalized(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.US);
     }
 
     private static String formatDetailedSummary(String value) {

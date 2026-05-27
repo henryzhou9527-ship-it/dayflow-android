@@ -15,10 +15,10 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Provider setup includes Android-native connection tests for Gemini and Ollama so the selected engine can be checked during onboarding or later in Settings.
 - Settings are organized into Dayflow-like Profile, Storage, Privacy, Providers, Export, and Other sections.
 - Other settings include app preference toggles and an output-language override that is passed into timeline analysis and chat prompts.
-- Adds first-run onboarding, journal entries, daily goals, Dayflow-style review ratings, editable categories, storage stats, per-app privacy blocking, day deletion, and reprocessing controls.
+- Adds first-run onboarding, journal entries, daily goals, Dayflow-style review ratings, editable categories, color preset swatches, storage stats, per-app privacy blocking, day deletion, and reprocessing controls.
 - Daily goals include a native review/setup flow with yesterday's goal review, last-week averages, focus/distraction category assignment, skip, and persistence.
 - Daily includes the original-style data readiness gate: 5 hours of analyzed 15-minute batches, progress text, permission/recording/analyze actions, provider selection, and persisted unlock.
-- Timeline and review cards support manual category reassignment, single-card deletion, summary feedback, and Dayflow-style cards-to-review prompts.
+- Timeline and review cards support manual category reassignment with Dayflow-style category pills, single-card deletion, summary feedback, and Dayflow-style cards-to-review prompts.
 - Timeline cards include category/time pills, screenshot preview thumbnails, SUMMARY/DETAILED SUMMARY sections, and tap-to-play timelapse entry points.
 - Timeline and review cards can generate, save, regenerate, and play MP4 timelapse summaries from the card's captured screenshots.
 - Daily view surfaces day-goal progress, focus summaries, distraction summaries, an original-style touch workflow grid with dynamic time windows, totals, stats, distraction markers, and editable Dayflow-style standup cards for highlights, tasks, and blockers.
