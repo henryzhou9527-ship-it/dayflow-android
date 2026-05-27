@@ -12,6 +12,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Chat uses saved timeline cards, journal notes, category totals, and recent chat history, then answers through Gemini or Ollama when configured.
 - Provider settings include a backup provider so timeline analysis and chat can retry through another route before falling back locally.
 - Adds first-run onboarding, journal entries, daily goals, review ratings, editable categories, storage stats, per-app privacy blocking, day deletion, and reprocessing controls.
+- Timeline and review cards support manual category reassignment and single-card deletion, matching the original Dayflow correction workflow.
 - Redacts screenshots for blocked apps while still preserving timeline continuity.
 - Supports timed/indefinite recording pauses and shows saved screenshots inside review cards for frame-by-frame context.
 - Weekly view supports Monday-based week navigation, focus heatmaps, time distribution, top-level updates, next-step suggestions, and application interaction summaries.

@@ -709,6 +709,7 @@ public final class MainActivity extends Activity {
             row.addView(ratingButton(card, "Neutral"), new LinearLayout.LayoutParams(0, dp(40), 1));
             row.addView(ratingButton(card, "Distraction"), new LinearLayout.LayoutParams(0, dp(40), 1));
             p.addView(row);
+            p.addView(cardActions(card));
             content.addView(p);
         }
     }
@@ -1135,14 +1136,69 @@ public final class MainActivity extends Activity {
     }
 
     private void renderCardList(List<TimelineCard> cards) {
-        for (TimelineCard card : cards) {
+        for (final TimelineCard card : cards) {
             LinearLayout p = panel();
             p.addView(text(TimeUtil.timeLabel(card.startMs) + " - " + TimeUtil.timeLabel(card.endMs) + " · " + card.category, 12, Colors.MUTED, true));
             p.addView(serif(card.title, 24, Colors.TEXT));
             p.addView(text(card.summary == null ? "" : card.summary, 14, Colors.TEXT, false));
+            p.addView(cardActions(card));
             content.addView(p);
             addGap(10);
         }
+    }
+
+    private LinearLayout cardActions(final TimelineCard card) {
+        LinearLayout actions = row();
+        Button category = smallButton("Category");
+        category.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { showCategoryPicker(card); }
+        });
+        Button delete = smallButton("Delete");
+        delete.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { confirmDeleteCard(card); }
+        });
+        actions.addView(category, new LinearLayout.LayoutParams(0, dp(40), 1));
+        actions.addView(delete, new LinearLayout.LayoutParams(dp(100), dp(40)));
+        return actions;
+    }
+
+    private void showCategoryPicker(final TimelineCard card) {
+        final List<Category> categories = db.fetchCategories();
+        if (categories.isEmpty()) {
+            setStatus("No categories available.");
+            return;
+        }
+        CharSequence[] labels = new CharSequence[categories.size()];
+        for (int i = 0; i < categories.size(); i++) {
+            labels[i] = categories.get(i).name;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Move card to category")
+                .setItems(labels, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        Category category = categories.get(which);
+                        db.updateTimelineCardCategory(card.id, category.name);
+                        setStatus("Card moved to " + category.name + ".");
+                        refresh();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void confirmDeleteCard(final TimelineCard card) {
+        new AlertDialog.Builder(this)
+                .setTitle("Delete this card?")
+                .setMessage(TimeUtil.timeLabel(card.startMs) + " - " + TimeUtil.timeLabel(card.endMs) + "\n" + card.title)
+                .setPositiveButton("Delete", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        db.deleteTimelineCard(card.id);
+                        setStatus("Card deleted.");
+                        refresh();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private LinearLayout chatMessageView(DayflowChatMessage message) {

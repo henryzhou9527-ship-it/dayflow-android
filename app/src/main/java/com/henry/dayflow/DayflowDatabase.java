@@ -389,6 +389,63 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         db.insert("timeline_cards", null, values);
     }
 
+    synchronized void updateTimelineCardCategory(long cardId, String category) {
+        if (category == null || category.trim().isEmpty()) return;
+        ContentValues values = new ContentValues();
+        values.put("category", category.trim());
+        getWritableDatabase().update(
+                "timeline_cards",
+                values,
+                "id = ? AND is_deleted = 0",
+                new String[]{String.valueOf(cardId)});
+    }
+
+    synchronized void deleteTimelineCard(long cardId) {
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            Cursor c = db.rawQuery(
+                    "SELECT batch_id, start_ts, end_ts FROM timeline_cards WHERE id = ? AND is_deleted = 0",
+                    new String[]{String.valueOf(cardId)});
+            Long batchId = null;
+            long startMs = 0L;
+            long endMs = 0L;
+            try {
+                if (!c.moveToFirst()) return;
+                if (!c.isNull(0)) batchId = c.getLong(0);
+                startMs = c.getLong(1);
+                endMs = c.getLong(2);
+            } finally {
+                c.close();
+            }
+
+            ContentValues deleted = new ContentValues();
+            deleted.put("is_deleted", 1);
+            db.update(
+                    "timeline_cards",
+                    deleted,
+                    "id = ? AND is_deleted = 0",
+                    new String[]{String.valueOf(cardId)});
+
+            if (endMs > startMs) {
+                String where = "(start_ts < ? AND end_ts > ?) OR (start_ts >= ? AND start_ts < ?)";
+                List<String> args = new ArrayList<>();
+                args.add(String.valueOf(endMs));
+                args.add(String.valueOf(startMs));
+                args.add(String.valueOf(startMs));
+                args.add(String.valueOf(endMs));
+                if (batchId != null) {
+                    where = "batch_id = ? AND (" + where + ")";
+                    args.add(0, String.valueOf(batchId));
+                }
+                db.delete("observations", where, args.toArray(new String[0]));
+            }
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+    }
+
     synchronized DashboardMetrics dashboardForDay(String day) {
         List<TimelineCard> cards = fetchTimelineCards(day);
         DashboardMetrics metrics = new DashboardMetrics();
