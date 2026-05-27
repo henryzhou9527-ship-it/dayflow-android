@@ -693,6 +693,11 @@ public final class MainActivity extends Activity {
         actions.addView(next, new LinearLayout.LayoutParams(dp(44), dp(38)));
         content.addView(actions);
 
+        WeeklyDistributionView distribution = new WeeklyDistributionView(this);
+        distribution.setCards(cards);
+        content.addView(distribution, new LinearLayout.LayoutParams(-1, dp(300)));
+        addGap(14);
+
         WeeklyCanvasView weekly = new WeeklyCanvasView(this);
         weekly.setCards(start, cards);
         content.addView(weekly, new LinearLayout.LayoutParams(-1, dp(520)));
