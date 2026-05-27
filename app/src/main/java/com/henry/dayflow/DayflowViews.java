@@ -19,6 +19,7 @@ import android.view.View;
 import android.widget.FrameLayout;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -221,14 +222,11 @@ final class TimelineReviewScrubberView extends View {
 
     private Bitmap decodePreview(String path) {
         if (path == null || !new File(path).isFile()) return null;
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(path, bounds);
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null;
-        BitmapFactory.Options opts = new BitmapFactory.Options();
-        int longest = Math.max(bounds.outWidth, bounds.outHeight);
-        opts.inSampleSize = Math.max(1, longest / 900);
-        return BitmapFactory.decodeFile(path, opts);
+        try {
+            return ScreenshotStorage.decodeBitmap(path, 900);
+        } catch (IOException ignored) {
+            return null;
+        }
     }
 
     private void drawMedia(Canvas canvas, float w, float h) {

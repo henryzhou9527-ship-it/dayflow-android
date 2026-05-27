@@ -27,7 +27,6 @@ import android.util.DisplayMetrics;
 import android.view.WindowManager;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -198,10 +197,7 @@ public final class CaptureService extends Service {
             if (scaled != bitmap) bitmap.recycle();
 
             File file = nextScreenshotFile();
-            FileOutputStream out = new FileOutputStream(file);
-            scaled.compress(Bitmap.CompressFormat.JPEG, 85, out);
-            out.flush();
-            out.close();
+            ScreenshotStorage.writeEncryptedJpeg(scaled, file, 85);
             scaled.recycle();
 
             db.insertScreenshot(
@@ -248,7 +244,7 @@ public final class CaptureService extends Service {
         File dir = new File(getFilesDir(), "recordings");
         if (!dir.exists()) dir.mkdirs();
         String stamp = new SimpleDateFormat("yyyyMMdd_HHmmssSSS", Locale.US).format(new Date());
-        return new File(dir, stamp + ".jpg");
+        return new File(dir, stamp + ".dfjpg");
     }
 
     private Bitmap redactedBitmap(ForegroundAppReader.AppSnapshot app) {

@@ -2636,6 +2636,7 @@ public final class MainActivity extends Activity {
         panel.addView(text(stats.screenshotCount + " screenshots · " + bytes(stats.screenshotBytes) + "\n" +
                 stats.timelapseCount + " timelapses · " + bytes(stats.timelapseBytes) + "\n" +
                 stats.cardCount + " cards · " + stats.batchCount + " batches", 14, Colors.TEXT, false));
+        panel.addView(text("Screenshot storage: encrypted for new captures. Older saved frames stay readable for analysis and playback.", 13, Colors.MUTED, false));
         final EditText retention = field("Screenshot retention days", String.valueOf(prefs.retentionDays()), true);
         retention.setInputType(InputType.TYPE_CLASS_NUMBER);
         panel.addView(retention, new LinearLayout.LayoutParams(-1, dp(54)));
@@ -4112,14 +4113,11 @@ public final class MainActivity extends Activity {
     }
 
     private Bitmap previewBitmap(String filePath) {
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(filePath, bounds);
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null;
-        BitmapFactory.Options opts = new BitmapFactory.Options();
-        int longest = Math.max(bounds.outWidth, bounds.outHeight);
-        opts.inSampleSize = Math.max(1, longest / 420);
-        return BitmapFactory.decodeFile(filePath, opts);
+        try {
+            return ScreenshotStorage.decodeBitmap(filePath, 420);
+        } catch (IOException ignored) {
+            return null;
+        }
     }
 
     private String reviewLine(String rating, Map<String, Long> reviewed) {

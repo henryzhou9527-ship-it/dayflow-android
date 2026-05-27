@@ -53,8 +53,7 @@ final class TimelapseGenerator {
         if (screenshots.size() == 1) screenshots.add(screenshots.get(0));
 
         BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(screenshots.get(0).filePath, bounds);
+        bounds = ScreenshotStorage.decodeBounds(screenshots.get(0).filePath);
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw new IOException("First screenshot is unreadable");
 
         int[] size = canvasSize(bounds.outWidth, bounds.outHeight);
@@ -253,18 +252,10 @@ final class TimelapseGenerator {
     }
 
     private static Bitmap renderFrame(String path, int width, int height) throws IOException {
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(path, bounds);
+        BitmapFactory.Options bounds = ScreenshotStorage.decodeBounds(path);
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw new IOException("Unreadable screenshot");
 
-        BitmapFactory.Options opts = new BitmapFactory.Options();
-        int sample = 1;
-        while (bounds.outWidth / sample > width * 2 || bounds.outHeight / sample > height * 2) {
-            sample *= 2;
-        }
-        opts.inSampleSize = sample;
-        Bitmap source = BitmapFactory.decodeFile(path, opts);
+        Bitmap source = ScreenshotStorage.decodeBitmap(path, Math.max(width, height) * 2);
         if (source == null) throw new IOException("Could not decode screenshot");
 
         Bitmap frame = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);

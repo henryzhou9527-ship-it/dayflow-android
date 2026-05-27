@@ -42,16 +42,16 @@ Android constraints:
 
 Implemented Android equivalent:
 
-- `CaptureService`: foreground MediaProjection service, screenshot loop, local JPEG storage.
+- `CaptureService`: foreground MediaProjection service, screenshot loop, Android Keystore-encrypted local screenshot storage.
 - `ForegroundAppReader`: reads recent UsageStats events for foreground app label/package.
 - `DayflowDatabase`: local SQLite schema modeled after Dayflow tables.
 - `AnalysisEngine`: 24-hour lookback, 15-minute batch target, 2-minute split gap, 45-minute replacement window.
 - `AnalysisEngine`: explicit launcher/lock-screen idle shortcut that writes an Idle card without spending an AI call.
+- `ScreenshotStorage`: encrypted-at-rest capture files with compatibility readers for older plaintext screenshots.
 - `HybridActivityAnalyzer`: Gemini vision when configured; otherwise local heuristic cards.
 - `MainActivity`: Dayflow-like Timeline, Daily, Weekly, Chat, and Settings surfaces.
 
 ## What To Improve Next
 
-- Add encrypted screenshot storage and retention controls.
 - Add richer source-level provider parity for Dayflow backend and chat CLI routes.
 - Add deeper mobile QA on a physical Android device for capture continuity, notification deep links, and long-run battery behavior.

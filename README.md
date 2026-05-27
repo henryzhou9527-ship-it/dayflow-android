@@ -5,7 +5,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 ## What It Does
 
 - Captures periodic screenshots through Android MediaProjection.
-- Stores screenshots and timeline data locally in SQLite.
+- Stores timeline data locally in SQLite and encrypts newly captured screenshot files with an Android Keystore key.
 - Uses Usage Access metadata to identify the foreground app.
 - Can optionally use an Android AccessibilityService as a local-only second signal for window titles and short visible-text snippets, improving analysis without sign-in.
 - Tracks recording health locally, including service heartbeat, last successful frame, capture errors, active resolution, and restart prompts when the recorder needs attention.
@@ -33,6 +33,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Daily and Weekly ready notifications mirror Dayflow's return-to-review flow, opening directly into the relevant Android tab when enough analyzed history exists.
 - Journal uses an original-style two-page board for intentions, notes, long-term goals, reflections, and Dayflow-generated daily summaries.
 - Redacts screenshots for blocked apps while still preserving timeline continuity.
+- New screenshot files are encrypted at rest; older plaintext captures remain readable for analysis, previews, and timelapses.
 - Recording/privacy settings include per-app blocking, optional window-context capture, capture cadence, batch size, max gap, and card lookback controls.
 - Supports timed/indefinite recording pauses and shows saved screenshots plus playable timelapses inside review cards for frame-by-frame context.
 - Review includes Dayflow's focused/neutral/distracted summary bars, cards-to-review progress, last-reviewed state, undo, current-rating chips, and Android-native left/up/right swipe rating.

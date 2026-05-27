@@ -8,7 +8,6 @@ import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -473,18 +472,7 @@ final class GeminiActivityAnalyzer implements ActivityAnalyzer {
     }
 
     private static byte[] readBytes(File file, int maxBytes) throws Exception {
-        InputStream in = new FileInputStream(file);
-        try {
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = in.read(buffer)) != -1 && out.size() < maxBytes) {
-                out.write(buffer, 0, Math.min(read, maxBytes - out.size()));
-            }
-            return out.toByteArray();
-        } finally {
-            in.close();
-        }
+        return ScreenshotStorage.readJpegBytes(file, maxBytes);
     }
 
     private static String postJson(String endpoint, String json) throws Exception {
@@ -613,18 +601,7 @@ final class CustomApiActivityAnalyzer implements ActivityAnalyzer {
     }
 
     private static byte[] readBytes(File file, int maxBytes) throws Exception {
-        InputStream in = new FileInputStream(file);
-        try {
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = in.read(buffer)) != -1 && out.size() < maxBytes) {
-                out.write(buffer, 0, Math.min(read, maxBytes - out.size()));
-            }
-            return out.toByteArray();
-        } finally {
-            in.close();
-        }
+        return ScreenshotStorage.readJpegBytes(file, maxBytes);
     }
 
     private static String stripCodeFence(String text) {
@@ -725,18 +702,7 @@ final class OllamaActivityAnalyzer implements ActivityAnalyzer {
     }
 
     private static byte[] readBytes(File file, int maxBytes) throws Exception {
-        InputStream in = new FileInputStream(file);
-        try {
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = in.read(buffer)) != -1 && out.size() < maxBytes) {
-                out.write(buffer, 0, Math.min(read, maxBytes - out.size()));
-            }
-            return out.toByteArray();
-        } finally {
-            in.close();
-        }
+        return ScreenshotStorage.readJpegBytes(file, maxBytes);
     }
 
     private static String postJson(String endpoint, String json) throws Exception {
