@@ -492,6 +492,11 @@ public final class MainActivity extends Activity {
     }
 
     private void renderDaily(List<TimelineCard> cards) {
+        DashboardMetrics metrics = metricsFor(cards);
+        renderDailyGoals(metrics);
+        renderDailyFocusSummary(cards, metrics);
+        renderDailyDistractionSummary(cards, metrics);
+
         DailyWorkflowView workflow = new DailyWorkflowView(this);
         workflow.setCards(selectedDay, cards);
         content.addView(workflow, new LinearLayout.LayoutParams(-1, dp(250)));
@@ -508,6 +513,77 @@ public final class MainActivity extends Activity {
         content.addView(standup);
         addGap(14);
         renderCardList(cards);
+    }
+
+    private void renderDailyGoals(DashboardMetrics metrics) {
+        final DayGoal goal = db.fetchDayGoal(selectedDay);
+        LinearLayout panel = panel();
+        panel.addView(text("DAY GOALS", 12, Colors.MUTED, true));
+        panel.addView(serif("Where do you want to spend your time today?", 26, Colors.TEXT));
+
+        if (goal.skipped) {
+            panel.addView(text("Goals are skipped for " + selectedDay + ". Your timeline and summaries still update normally.", 14, Colors.MUTED, false));
+        } else {
+            long focusTargetMs = goal.focusTargetMinutes * TimeUtil.MINUTE;
+            long distractionLimitMs = goal.distractionLimitMinutes * TimeUtil.MINUTE;
+            panel.addView(goalLine("Focus target", metrics.productiveMs, focusTargetMs, Colors.WORK, true));
+            panel.addView(goalLine("Distraction limit", metrics.distractionMs, distractionLimitMs, Colors.DISTRACTION, false));
+            panel.addView(text(goalStatus(metrics, goal), 14, Colors.TEXT, false));
+        }
+
+        LinearLayout actions = row();
+        Button edit = pillButton("Edit goals");
+        edit.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                selectedTab = "Journal";
+                refresh();
+            }
+        });
+        Button skip = smallButton(goal.skipped ? "Resume" : "Skip");
+        skip.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                goal.skipped = !goal.skipped;
+                db.saveDayGoal(goal);
+                setStatus(goal.skipped ? "Goals skipped for today." : "Goals resumed.");
+                refresh();
+            }
+        });
+        actions.addView(edit, new LinearLayout.LayoutParams(0, dp(44), 1));
+        actions.addView(skip, new LinearLayout.LayoutParams(dp(104), dp(44)));
+        panel.addView(actions);
+        content.addView(panel);
+    }
+
+    private void renderDailyFocusSummary(List<TimelineCard> cards, DashboardMetrics metrics) {
+        LinearLayout panel = panel();
+        panel.addView(text("YOUR FOCUS", 12, Colors.MUTED, true));
+        panel.addView(serif("Total focus time", 24, Colors.TEXT));
+        panel.addView(serif(TimeUtil.shortDuration(metrics.productiveMs), 36, Colors.ACCENT));
+        TimelineCard longest = longestUsefulCard(cards);
+        if (longest == null) {
+            panel.addView(text("No focus block yet. Once Dayflow sees useful work, the longest block appears here.", 14, Colors.MUTED, false));
+        } else {
+            panel.addView(text("Longest block: " + longest.title + " · " + TimeUtil.shortDuration(longest.durationMs()), 14, Colors.TEXT, false));
+            panel.addView(text(shortText(longest.summary, 150), 13, Colors.MUTED, false));
+        }
+        content.addView(panel);
+    }
+
+    private void renderDailyDistractionSummary(List<TimelineCard> cards, DashboardMetrics metrics) {
+        LinearLayout panel = panel();
+        panel.addView(text("DISTRACTIONS SO FAR", 12, Colors.MUTED, true));
+        int ratio = metrics.trackedMs <= 0 ? 0 : Math.round(metrics.distractionMs * 100f / metrics.trackedMs);
+        panel.addView(serif(TimeUtil.shortDuration(metrics.distractionMs) + " distracted", 24, Colors.TEXT));
+        panel.addView(text("Captured " + TimeUtil.shortDuration(metrics.trackedMs) + " · " + ratio + "% distraction ratio", 14, Colors.MUTED, false));
+        panel.addView(progressBar(Colors.DISTRACTION, ratio / 100f), new LinearLayout.LayoutParams(-1, dp(14)));
+        TimelineCard longest = longestDistractionCard(cards);
+        if (longest == null) {
+            panel.addView(text("No distraction pattern detected yet.", 14, Colors.MUTED, false));
+        } else {
+            panel.addView(text("Largest drift: " + longest.title + " · " + TimeUtil.shortDuration(longest.durationMs()), 14, Colors.TEXT, false));
+            panel.addView(text(shortText(longest.summary, 150), 13, Colors.MUTED, false));
+        }
+        content.addView(panel);
     }
 
     private void renderWeekly() {
@@ -1270,6 +1346,52 @@ public final class MainActivity extends Activity {
         return rating + ": " + TimeUtil.shortDuration(value == null ? 0 : value);
     }
 
+    private LinearLayout goalLine(String label, long actualMs, long targetMs, int color, boolean higherIsBetter) {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(0, dp(8), 0, dp(8));
+        float ratio = targetMs <= 0 ? 0f : actualMs / (float) targetMs;
+        int percent = Math.round(Math.min(1f, ratio) * 100f);
+        String targetLabel = higherIsBetter ? "target" : "limit";
+        layout.addView(text(label + ": " + TimeUtil.shortDuration(actualMs) + " / " + TimeUtil.shortDuration(targetMs) + " " + targetLabel, 14, Colors.TEXT, false));
+        layout.addView(progressBar(color, ratio), new LinearLayout.LayoutParams(-1, dp(12)));
+        layout.addView(text(percent + "%", 12, Colors.MUTED, false));
+        return layout;
+    }
+
+    private String goalStatus(DashboardMetrics metrics, DayGoal goal) {
+        long focusTargetMs = goal.focusTargetMinutes * TimeUtil.MINUTE;
+        long distractionLimitMs = goal.distractionLimitMinutes * TimeUtil.MINUTE;
+        boolean focusDone = focusTargetMs > 0 && metrics.productiveMs >= focusTargetMs;
+        boolean distractionOver = distractionLimitMs > 0 && metrics.distractionMs > distractionLimitMs;
+        if (focusDone && !distractionOver) return "Focus target reached while staying inside the distraction limit.";
+        if (focusDone) return "Focus target reached, but distraction time is over the limit.";
+        if (distractionOver) return "Distraction limit is already exceeded. Protect the next block.";
+        return "Goals are in progress. Keep building focused blocks.";
+    }
+
+    private LinearLayout progressBar(int color, float fraction) {
+        LinearLayout track = new LinearLayout(this);
+        track.setOrientation(LinearLayout.HORIZONTAL);
+        track.setPadding(0, dp(3), 0, dp(3));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Colors.CARD_ALT);
+        bg.setStroke(1, Colors.STROKE);
+        bg.setCornerRadius(dp(8));
+        track.setBackground(bg);
+
+        View fill = new View(this);
+        GradientDrawable fillBg = new GradientDrawable();
+        fillBg.setColor(color);
+        fillBg.setCornerRadius(dp(6));
+        fill.setBackground(fillBg);
+        int filled = Math.max(1, Math.round(Math.min(1f, Math.max(0f, fraction)) * 100f));
+        track.addView(fill, new LinearLayout.LayoutParams(0, -1, filled));
+        Space rest = new Space(this);
+        track.addView(rest, new LinearLayout.LayoutParams(0, -1, Math.max(1, 100 - filled)));
+        return track;
+    }
+
     private DashboardMetrics metricsFor(List<TimelineCard> cards) {
         DashboardMetrics metrics = new DashboardMetrics();
         metrics.cardCount = cards == null ? 0 : cards.size();
@@ -1291,6 +1413,15 @@ public final class MainActivity extends Activity {
         TimelineCard best = null;
         for (TimelineCard card : cards) {
             if (!isUseful(card)) continue;
+            if (best == null || card.durationMs() > best.durationMs()) best = card;
+        }
+        return best;
+    }
+
+    private TimelineCard longestDistractionCard(List<TimelineCard> cards) {
+        TimelineCard best = null;
+        for (TimelineCard card : cards) {
+            if (!isDistraction(card)) continue;
             if (best == null || card.durationMs() > best.durationMs()) best = card;
         }
         return best;
