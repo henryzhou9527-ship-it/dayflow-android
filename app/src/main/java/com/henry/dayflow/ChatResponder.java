@@ -37,6 +37,19 @@ final class ChatResponder {
         return fallback(day, question);
     }
 
+    String standup(String day) {
+        String prompt = promptFor(day, "Write a concise standup update with exactly three sections: Yesterday's highlights, Today's tasks, and Blockers. Use short bullets grounded in the timeline and journal. Do not invent facts.");
+        String answer = tryProvider(prefs.provider(), prompt);
+        if (answer != null && !answer.trim().isEmpty()) return answer;
+
+        if (!sameProvider(prefs.provider(), prefs.backupProvider())) {
+            answer = tryProvider(prefs.backupProvider(), prompt);
+            if (answer != null && !answer.trim().isEmpty()) return answer;
+        }
+
+        return standupFallback(day);
+    }
+
     private String tryProvider(String providerName, String prompt) {
         String provider = providerName == null ? "" : providerName.toLowerCase(Locale.US);
         try {
@@ -150,6 +163,37 @@ final class ChatResponder {
             answer.append("- ").append(entry.getKey()).append(": ").append(TimeUtil.shortDuration(entry.getValue())).append("\n");
         }
         return answer.toString();
+    }
+
+    private String standupFallback(String day) {
+        List<TimelineCard> cards = db.fetchTimelineCards(day);
+        JournalEntry journal = db.fetchJournal(day);
+        if (cards.isEmpty() && blank(journal.goals).equals("-")) {
+            return "No analyzed blocks yet. Start recording and return after one full batch.";
+        }
+
+        StringBuilder highlights = new StringBuilder("Yesterday's highlights\n");
+        StringBuilder tasks = new StringBuilder("\nToday's tasks\n");
+        StringBuilder blockers = new StringBuilder("\nBlockers\n");
+        int count = 0;
+        for (TimelineCard card : cards) {
+            String category = card.category == null ? "" : card.category;
+            if (!category.equals("Distraction") && !category.equals("Idle") && count < 4) {
+                highlights.append("- ").append(card.title).append(" (").append(TimeUtil.shortDuration(card.durationMs())).append(")\n");
+                count++;
+            }
+            if (category.equals("Distraction")) {
+                blockers.append("- Drift in ").append(card.title).append("\n");
+            }
+        }
+        if (count == 0) highlights.append("- No focused timeline blocks yet.\n");
+        if (!blank(journal.goals).equals("-")) {
+            tasks.append("- ").append(blank(journal.goals).replace("\n", "\n- ")).append("\n");
+        } else {
+            tasks.append("- Continue the highest-signal block from today\n");
+        }
+        if (blockers.toString().trim().equals("Blockers")) blockers.append("- No obvious blockers detected yet.\n");
+        return highlights.append(tasks).append(blockers).toString();
     }
 
     private static String postJson(String endpoint, String json, int readTimeoutMs) throws Exception {

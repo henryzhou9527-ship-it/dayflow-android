@@ -502,15 +502,7 @@ public final class MainActivity extends Activity {
         content.addView(workflow, new LinearLayout.LayoutParams(-1, dp(250)));
         addGap(14);
 
-        LinearLayout standup = panel();
-        standup.addView(serif("Standup for today", 26, Colors.ACCENT));
-        standup.addView(text(standupText(cards), 14, Colors.TEXT, false));
-        Button copy = pillButton("Copy standup update");
-        copy.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { copyText("Dayflow standup", standupText(db.fetchTimelineCards(selectedDay))); }
-        });
-        standup.addView(copy, new LinearLayout.LayoutParams(-1, dp(44)));
-        content.addView(standup);
+        renderDailyStandup(cards);
         addGap(14);
         renderCardList(cards);
     }
@@ -584,6 +576,56 @@ public final class MainActivity extends Activity {
             panel.addView(text(shortText(longest.summary, 150), 13, Colors.MUTED, false));
         }
         content.addView(panel);
+    }
+
+    private void renderDailyStandup(List<TimelineCard> cards) {
+        final DailyStandupEntry saved = db.fetchDailyStandup(selectedDay);
+        final String draft = saved == null ? standupText(cards) : saved.content;
+
+        LinearLayout standup = panel();
+        standup.addView(text("DAILY STANDUP", 12, Colors.MUTED, true));
+        standup.addView(serif("Standup for today", 26, Colors.ACCENT));
+        standup.addView(text(saved == null ? "Draft from current timeline." : "Saved " + TimeUtil.timeLabel(saved.updatedAtMs), 13, Colors.MUTED, false));
+        standup.addView(text(draft, 14, Colors.TEXT, false));
+
+        LinearLayout actions = row();
+        Button copy = pillButton("Copy");
+        copy.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { copyText("Dayflow standup", draft); }
+        });
+        Button regenerate = smallButton("Regenerate");
+        regenerate.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { regenerateStandup(selectedDay); }
+        });
+        Button save = smallButton("Save");
+        save.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                db.saveDailyStandup(selectedDay, draft);
+                setStatus("Standup saved.");
+                refresh();
+            }
+        });
+        actions.addView(copy, new LinearLayout.LayoutParams(0, dp(44), 1));
+        actions.addView(regenerate, new LinearLayout.LayoutParams(dp(126), dp(44)));
+        actions.addView(save, new LinearLayout.LayoutParams(dp(82), dp(44)));
+        standup.addView(actions);
+        content.addView(standup);
+    }
+
+    private void regenerateStandup(final String day) {
+        setStatus("Regenerating standup...");
+        new Thread(new Runnable() {
+            @Override public void run() {
+                final String answer = new ChatResponder(MainActivity.this).standup(day);
+                db.saveDailyStandup(day, answer);
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        setStatus("Standup regenerated.");
+                        refresh();
+                    }
+                });
+            }
+        }, "dayflow-standup").start();
     }
 
     private void renderWeekly() {

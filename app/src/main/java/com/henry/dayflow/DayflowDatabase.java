@@ -17,7 +17,7 @@ import java.util.Map;
 
 final class DayflowDatabase extends SQLiteOpenHelper {
     private static final String DB_NAME = "dayflow.sqlite";
-    private static final int DB_VERSION = 3;
+    private static final int DB_VERSION = 4;
 
     DayflowDatabase(Context context) {
         super(context.getApplicationContext(), DB_NAME, null, DB_VERSION);
@@ -37,6 +37,9 @@ final class DayflowDatabase extends SQLiteOpenHelper {
             seedDefaultCategories(db);
         }
         if (oldVersion < 3) {
+            createFeatureTables(db);
+        }
+        if (oldVersion < 4) {
             createFeatureTables(db);
         }
     }
@@ -149,6 +152,13 @@ final class DayflowDatabase extends SQLiteOpenHelper {
                 "content TEXT NOT NULL," +
                 "created_at INTEGER NOT NULL)");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_chat_messages_created ON chat_messages(created_at)");
+
+        db.execSQL("CREATE TABLE IF NOT EXISTS daily_standup_entries (" +
+                "standup_day TEXT PRIMARY KEY," +
+                "payload_text TEXT NOT NULL," +
+                "created_at INTEGER NOT NULL," +
+                "updated_at INTEGER NOT NULL)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_daily_standups_updated ON daily_standup_entries(updated_at)");
     }
 
     private void seedDefaultCategories(SQLiteDatabase db) {
@@ -519,6 +529,36 @@ final class DayflowDatabase extends SQLiteOpenHelper {
 
     synchronized void clearChatMessages() {
         getWritableDatabase().delete("chat_messages", null, null);
+    }
+
+    synchronized DailyStandupEntry fetchDailyStandup(String day) {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT * FROM daily_standup_entries WHERE standup_day = ?",
+                new String[]{day});
+        try {
+            if (!c.moveToFirst()) return null;
+            DailyStandupEntry entry = new DailyStandupEntry();
+            entry.day = c.getString(c.getColumnIndexOrThrow("standup_day"));
+            entry.content = c.getString(c.getColumnIndexOrThrow("payload_text"));
+            entry.createdAtMs = c.getLong(c.getColumnIndexOrThrow("created_at"));
+            entry.updatedAtMs = c.getLong(c.getColumnIndexOrThrow("updated_at"));
+            return entry;
+        } finally {
+            c.close();
+        }
+    }
+
+    synchronized void saveDailyStandup(String day, String content) {
+        if (day == null || day.trim().isEmpty() || content == null || content.trim().isEmpty()) return;
+        long now = System.currentTimeMillis();
+        SQLiteDatabase db = getWritableDatabase();
+        DailyStandupEntry existing = fetchDailyStandup(day);
+        ContentValues values = new ContentValues();
+        values.put("standup_day", day);
+        values.put("payload_text", content.trim());
+        values.put("created_at", existing == null ? now : existing.createdAtMs);
+        values.put("updated_at", now);
+        db.insertWithOnConflict("daily_standup_entries", null, values, SQLiteDatabase.CONFLICT_REPLACE);
     }
 
     synchronized List<Category> fetchCategories() {
