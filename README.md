@@ -14,7 +14,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Provider setup includes Android-native connection tests for Gemini and Ollama so the selected engine can be checked during onboarding or later in Settings.
 - Settings are organized into Dayflow-like Profile, Storage, Privacy, Providers, Export, and Other sections.
 - Other settings include app preference toggles and an output-language override that is passed into timeline analysis and chat prompts.
-- Adds first-run onboarding, journal entries, daily goals, review ratings, editable categories, storage stats, per-app privacy blocking, day deletion, and reprocessing controls.
+- Adds first-run onboarding, journal entries, daily goals, Dayflow-style review ratings, editable categories, storage stats, per-app privacy blocking, day deletion, and reprocessing controls.
 - Daily goals include a native review/setup flow with yesterday's goal review, last-week averages, focus/distraction category assignment, skip, and persistence.
 - Daily includes the original-style data readiness gate: 5 hours of analyzed 15-minute batches, progress text, permission/recording/analyze actions, provider selection, and persisted unlock.
 - Timeline and review cards support manual category reassignment and single-card deletion, matching the original Dayflow correction workflow.
@@ -26,6 +26,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Redacts screenshots for blocked apps while still preserving timeline continuity.
 - Recording/privacy settings include per-app blocking plus capture cadence, batch size, max gap, and card lookback controls.
 - Supports timed/indefinite recording pauses and shows saved screenshots plus playable timelapses inside review cards for frame-by-frame context.
+- Review includes Dayflow's focused/neutral/distracted summary bars, cards-to-review progress, last-reviewed state, undo, current-rating chips, and Android-native left/up/right swipe rating.
 - Review cards include an Android-native touch scrubber that mirrors Dayflow's media review behavior with tap-to-play and drag-to-seek interactions.
 - Weekly view supports Monday-based week navigation, weekly distribution donuts, focus heatmaps, weekly overview footer metrics, weekly workflow grids, time distribution, context-shift comparison charts, top highlights, visual 1:1 suggestions, application interaction summaries, touch treemaps, category-to-app Sankey breakdowns, and app-switching network charts.
 - Onboarding stays local/function-focused and goes straight to permissions and analysis setup.

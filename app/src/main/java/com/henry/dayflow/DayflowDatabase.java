@@ -775,26 +775,207 @@ final class DayflowDatabase extends SQLiteOpenHelper {
     }
 
     synchronized void saveReviewRating(TimelineCard card, String rating) {
-        ContentValues values = new ContentValues();
-        values.put("start_ts", card.startMs);
-        values.put("end_ts", card.endMs);
-        values.put("rating", rating);
-        values.put("created_at", System.currentTimeMillis());
-        getWritableDatabase().insert("timeline_review_ratings", null, values);
+        if (card == null || card.endMs <= card.startMs) return;
+        SQLiteDatabase db = getWritableDatabase();
+        long now = System.currentTimeMillis();
+        String normalized = normalizeReviewRating(rating);
+        db.beginTransaction();
+        try {
+            List<ReviewRow> overlaps = fetchReviewRows(db, card.startMs, card.endMs);
+            for (ReviewRow row : overlaps) {
+                db.delete("timeline_review_ratings", "id = ?", new String[]{String.valueOf(row.id)});
+            }
+            for (ReviewRow row : overlaps) {
+                long leftEnd = Math.min(card.startMs, row.endMs);
+                if (leftEnd > row.startMs) insertReviewRating(db, row.startMs, leftEnd, row.rating, row.createdAtMs);
+                long rightStart = Math.max(card.endMs, row.startMs);
+                if (row.endMs > rightStart) insertReviewRating(db, rightStart, row.endMs, row.rating, row.createdAtMs);
+            }
+            insertReviewRating(db, card.startMs, card.endMs, normalized, now);
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
     }
 
     synchronized Map<String, Long> reviewSummary(String day) {
-        long start = TimeUtil.dayStartMs(day);
-        long end = start + TimeUtil.DAY;
+        ReviewSnapshot snapshot = reviewSnapshot(day, null);
+        Map<String, Long> map = new LinkedHashMap<>();
+        map.put("Focus", snapshot.focusedMs);
+        map.put("Neutral", snapshot.neutralMs);
+        map.put("Distraction", snapshot.distractedMs);
+        return map;
+    }
+
+    synchronized ReviewSnapshot reviewSnapshot(String day, List<TimelineCard> cards) {
+        long dayStart = TimeUtil.dayStartMs(day);
+        long dayEnd = dayStart + TimeUtil.DAY;
+        List<ReviewRow> rows = fetchReviewRows(getReadableDatabase(), dayStart, dayEnd);
+        ReviewSnapshot snapshot = new ReviewSnapshot();
+        for (ReviewRow row : rows) {
+            long overlap = overlapMs(row.startMs, row.endMs, dayStart, dayEnd);
+            if (overlap <= 0) continue;
+            addReviewDuration(snapshot, row.rating, overlap);
+            snapshot.lastReviewedAtMs = Math.max(snapshot.lastReviewedAtMs, row.createdAtMs);
+        }
+
+        if (cards == null) return snapshot;
+        for (TimelineCard card : cards) {
+            if (!isReviewableCard(card)) continue;
+            snapshot.totalCards++;
+            long duration = card.durationMs();
+            if (duration <= 0) {
+                snapshot.unreviewedCards++;
+                continue;
+            }
+            long covered = coveredMs(card.startMs, card.endMs, rows);
+            if (covered / (float) duration < 0.8f) snapshot.unreviewedCards++;
+        }
+        return snapshot;
+    }
+
+    synchronized String reviewRatingForCard(TimelineCard card) {
+        if (card == null || card.endMs <= card.startMs) return null;
+        List<ReviewRow> rows = fetchReviewRows(getReadableDatabase(), card.startMs, card.endMs);
+        long focused = 0;
+        long neutral = 0;
+        long distracted = 0;
+        for (ReviewRow row : rows) {
+            long overlap = overlapMs(row.startMs, row.endMs, card.startMs, card.endMs);
+            if (overlap <= 0) continue;
+            String rating = normalizeReviewRating(row.rating);
+            if ("Focused".equals(rating)) focused += overlap;
+            else if ("Distracted".equals(rating)) distracted += overlap;
+            else neutral += overlap;
+        }
+        long best = Math.max(focused, Math.max(neutral, distracted));
+        if (best <= 0 || best / (float) card.durationMs() < 0.5f) return null;
+        if (best == focused) return "Focused";
+        if (best == distracted) return "Distracted";
+        return "Neutral";
+    }
+
+    synchronized boolean undoLatestReviewRating(String day) {
+        long dayStart = TimeUtil.dayStartMs(day);
+        long dayEnd = dayStart + TimeUtil.DAY;
         Cursor c = getReadableDatabase().rawQuery(
-                "SELECT rating, SUM(end_ts - start_ts) FROM timeline_review_ratings WHERE start_ts >= ? AND end_ts <= ? GROUP BY rating",
-                new String[]{String.valueOf(start), String.valueOf(end)});
+                "SELECT created_at FROM timeline_review_ratings WHERE NOT (end_ts <= ? OR start_ts >= ?) ORDER BY created_at DESC LIMIT 1",
+                new String[]{String.valueOf(dayStart), String.valueOf(dayEnd)});
+        long createdAt = 0;
         try {
-            Map<String, Long> map = new LinkedHashMap<>();
-            while (c.moveToNext()) map.put(c.getString(0), c.getLong(1));
-            return map;
+            if (c.moveToFirst()) createdAt = c.getLong(0);
         } finally {
             c.close();
+        }
+        if (createdAt <= 0) return false;
+        int deleted = getWritableDatabase().delete(
+                "timeline_review_ratings",
+                "created_at = ? AND NOT (end_ts <= ? OR start_ts >= ?)",
+                new String[]{String.valueOf(createdAt), String.valueOf(dayStart), String.valueOf(dayEnd)});
+        return deleted > 0;
+    }
+
+    private List<ReviewRow> fetchReviewRows(SQLiteDatabase db, long startMs, long endMs) {
+        Cursor c = db.rawQuery(
+                "SELECT id, start_ts, end_ts, rating, created_at FROM timeline_review_ratings WHERE NOT (end_ts <= ? OR start_ts >= ?) ORDER BY start_ts ASC",
+                new String[]{String.valueOf(startMs), String.valueOf(endMs)});
+        try {
+            List<ReviewRow> rows = new ArrayList<>();
+            while (c.moveToNext()) {
+                rows.add(new ReviewRow(c.getLong(0), c.getLong(1), c.getLong(2), normalizeReviewRating(c.getString(3)), c.getLong(4)));
+            }
+            return rows;
+        } finally {
+            c.close();
+        }
+    }
+
+    private void insertReviewRating(SQLiteDatabase db, long startMs, long endMs, String rating, long createdAtMs) {
+        if (endMs <= startMs) return;
+        ContentValues values = new ContentValues();
+        values.put("start_ts", startMs);
+        values.put("end_ts", endMs);
+        values.put("rating", normalizeReviewRating(rating));
+        values.put("created_at", createdAtMs);
+        db.insert("timeline_review_ratings", null, values);
+    }
+
+    private static void addReviewDuration(ReviewSnapshot snapshot, String rating, long durationMs) {
+        String normalized = normalizeReviewRating(rating);
+        if ("Focused".equals(normalized)) snapshot.focusedMs += durationMs;
+        else if ("Distracted".equals(normalized)) snapshot.distractedMs += durationMs;
+        else snapshot.neutralMs += durationMs;
+    }
+
+    private static long coveredMs(long startMs, long endMs, List<ReviewRow> rows) {
+        List<ReviewRange> ranges = new ArrayList<>();
+        for (ReviewRow row : rows) {
+            long start = Math.max(startMs, row.startMs);
+            long end = Math.min(endMs, row.endMs);
+            if (end > start) ranges.add(new ReviewRange(start, end));
+        }
+        if (ranges.isEmpty()) return 0;
+        Collections.sort(ranges, new Comparator<ReviewRange>() {
+            @Override public int compare(ReviewRange a, ReviewRange b) {
+                return Long.compare(a.startMs, b.startMs);
+            }
+        });
+        long covered = 0;
+        long currentStart = ranges.get(0).startMs;
+        long currentEnd = ranges.get(0).endMs;
+        for (int i = 1; i < ranges.size(); i++) {
+            ReviewRange range = ranges.get(i);
+            if (range.startMs <= currentEnd) {
+                currentEnd = Math.max(currentEnd, range.endMs);
+            } else {
+                covered += currentEnd - currentStart;
+                currentStart = range.startMs;
+                currentEnd = range.endMs;
+            }
+        }
+        return covered + currentEnd - currentStart;
+    }
+
+    private static long overlapMs(long aStart, long aEnd, long bStart, long bEnd) {
+        return Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
+    }
+
+    private static boolean isReviewableCard(TimelineCard card) {
+        if (card == null) return false;
+        String category = card.category == null ? "" : card.category.trim().toLowerCase(Locale.US);
+        return card.endMs > card.startMs && !category.equals("system") && !category.contains("system");
+    }
+
+    private static String normalizeReviewRating(String rating) {
+        String normalized = rating == null ? "" : rating.trim().toLowerCase(Locale.US);
+        if (normalized.contains("distract")) return "Distracted";
+        if (normalized.contains("focus")) return "Focused";
+        return "Neutral";
+    }
+
+    private static final class ReviewRow {
+        final long id;
+        final long startMs;
+        final long endMs;
+        final String rating;
+        final long createdAtMs;
+
+        ReviewRow(long id, long startMs, long endMs, String rating, long createdAtMs) {
+            this.id = id;
+            this.startMs = startMs;
+            this.endMs = endMs;
+            this.rating = rating;
+            this.createdAtMs = createdAtMs;
+        }
+    }
+
+    private static final class ReviewRange {
+        final long startMs;
+        final long endMs;
+
+        ReviewRange(long startMs, long endMs) {
+            this.startMs = startMs;
+            this.endMs = endMs;
         }
     }
 

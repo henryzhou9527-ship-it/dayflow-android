@@ -19,6 +19,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -1493,11 +1494,30 @@ public final class MainActivity extends Activity {
     }
 
     private void renderReview(List<TimelineCard> cards) {
+        final ReviewSnapshot snapshot = db.reviewSnapshot(selectedDay, cards);
         LinearLayout summary = panel();
-        summary.addView(serif("Review", 30, Colors.TEXT));
-        summary.addView(text("Mark each block as focus, neutral, or distraction to train your day review.", 14, Colors.MUTED, false));
-        Map<String, Long> reviewed = db.reviewSummary(selectedDay);
-        summary.addView(text(reviewLine("Focus", reviewed) + "\n" + reviewLine("Neutral", reviewed) + "\n" + reviewLine("Distraction", reviewed), 14, Colors.TEXT, false));
+        summary.addView(serif("Your review", 30, Colors.TEXT));
+        summary.addView(text(reviewSubtitle(snapshot), 14, Colors.MUTED, false));
+        ReviewSummaryView reviewBars = new ReviewSummaryView(this);
+        reviewBars.setData(snapshot);
+        LinearLayout.LayoutParams barsLp = new LinearLayout.LayoutParams(-1, dp(116));
+        barsLp.setMargins(0, dp(6), 0, dp(4));
+        summary.addView(reviewBars, barsLp);
+        LinearLayout summaryActions = row();
+        Button undo = smallButton("Undo last rating");
+        undo.setEnabled(snapshot.hasData());
+        undo.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                if (db.undoLatestReviewRating(selectedDay)) {
+                    setStatus("Latest review rating undone.");
+                    refresh();
+                } else {
+                    setStatus("No review rating to undo.");
+                }
+            }
+        });
+        summaryActions.addView(undo, new LinearLayout.LayoutParams(0, dp(40), 1));
+        summary.addView(summaryActions);
         content.addView(summary);
 
         if (cards.isEmpty()) {
@@ -1508,21 +1528,37 @@ public final class MainActivity extends Activity {
             return;
         }
 
+        int index = 1;
         for (final TimelineCard card : cards) {
             LinearLayout p = panel();
-            p.addView(text(TimeUtil.timeLabel(card.startMs) + " - " + TimeUtil.timeLabel(card.endMs) + " · " + card.category, 12, Colors.MUTED, true));
-            p.addView(serif(card.title, 24, Colors.TEXT));
+            attachReviewSwipe(p, card);
             addReviewScrubber(p, card);
-            p.addView(text(card.detailedSummary == null ? card.summary : card.detailedSummary, 14, Colors.TEXT, false));
+            LinearLayout meta = row();
+            meta.addView(reviewChip(clean(card.category, "Uncategorized"), Colors.colorForCategory(card.category), ColorUtils.withAlpha(Colors.colorForCategory(card.category), 28)), new LinearLayout.LayoutParams(0, dp(30), 1));
+            meta.addView(reviewChip(TimeUtil.timeLabel(card.startMs) + " - " + TimeUtil.timeLabel(card.endMs), Colors.STROKE, Colors.CARD_ALT), new LinearLayout.LayoutParams(0, dp(30), 1));
+            p.addView(meta);
+            TextView title = serif(card.title, 24, Colors.TEXT);
+            attachReviewSwipe(title, card);
+            p.addView(title);
+            String currentRating = db.reviewRatingForCard(card);
+            if (currentRating != null) {
+                p.addView(reviewRatingChip("Rated " + currentRating, currentRating), new LinearLayout.LayoutParams(-1, dp(34)));
+            }
+            TextView summaryText = text(card.detailedSummary == null ? card.summary : card.detailedSummary, 14, Colors.TEXT, false);
+            attachReviewSwipe(summaryText, card);
+            p.addView(summaryText);
             addReviewFrames(p, card);
             addTimelapseControls(p, card);
+            p.addView(text("Swipe left for Distracted, up for Neutral, right for Focused.", 12, Colors.MUTED, false));
             LinearLayout row = row();
-            row.addView(ratingButton(card, "Focus"), new LinearLayout.LayoutParams(0, dp(40), 1));
-            row.addView(ratingButton(card, "Neutral"), new LinearLayout.LayoutParams(0, dp(40), 1));
-            row.addView(ratingButton(card, "Distraction"), new LinearLayout.LayoutParams(0, dp(40), 1));
+            row.addView(ratingButton(card, "Distracted", "Distracted".equals(currentRating)), new LinearLayout.LayoutParams(0, dp(42), 1));
+            row.addView(ratingButton(card, "Neutral", "Neutral".equals(currentRating)), new LinearLayout.LayoutParams(0, dp(42), 1));
+            row.addView(ratingButton(card, "Focused", "Focused".equals(currentRating)), new LinearLayout.LayoutParams(0, dp(42), 1));
             p.addView(row);
+            p.addView(text(index + " / " + cards.size(), 11, Colors.MUTED, true));
             p.addView(cardActions(card));
             content.addView(p);
+            index++;
         }
     }
 
@@ -2657,16 +2693,90 @@ public final class MainActivity extends Activity {
         return p;
     }
 
-    private Button ratingButton(final TimelineCard card, final String rating) {
-        Button button = smallButton(rating);
+    private Button ratingButton(final TimelineCard card, final String rating, boolean selected) {
+        Button button = selected ? pillButton(rating) : smallButton(rating);
         button.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                db.saveReviewRating(card, rating);
-                setStatus("Marked " + rating.toLowerCase(Locale.US) + ".");
-                refresh();
+                rateReviewCard(card, rating);
             }
         });
         return button;
+    }
+
+    private void rateReviewCard(TimelineCard card, String rating) {
+        db.saveReviewRating(card, rating);
+        setStatus("Marked " + rating.toLowerCase(Locale.US) + ".");
+        refresh();
+    }
+
+    private void attachReviewSwipe(View view, final TimelineCard card) {
+        final float[] downX = new float[1];
+        final float[] downY = new float[1];
+        view.setOnTouchListener(new View.OnTouchListener() {
+            @Override public boolean onTouch(View touched, MotionEvent event) {
+                switch (event.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        downX[0] = event.getX();
+                        downY[0] = event.getY();
+                        return false;
+                    case MotionEvent.ACTION_UP:
+                        float dx = event.getX() - downX[0];
+                        float dy = event.getY() - downY[0];
+                        float absX = Math.abs(dx);
+                        float absY = Math.abs(dy);
+                        if (absX > dp(72) && absX > absY * 1.2f) {
+                            rateReviewCard(card, dx > 0 ? "Focused" : "Distracted");
+                            return true;
+                        }
+                        if (-dy > dp(72) && absY > absX * 1.1f) {
+                            rateReviewCard(card, "Neutral");
+                            return true;
+                        }
+                        return false;
+                    default:
+                        return false;
+                }
+            }
+        });
+    }
+
+    private String reviewSubtitle(ReviewSnapshot snapshot) {
+        String base = snapshot.hasData()
+                ? "Last reviewed at " + TimeUtil.timeLabel(snapshot.lastReviewedAtMs) + "."
+                : "No reviews yet.";
+        if (snapshot.totalCards <= 0) return base;
+        String count = snapshot.unreviewedCards == 1 ? "1 card" : snapshot.unreviewedCards + " cards";
+        if (snapshot.unreviewedCards > 0) {
+            return base + " Review " + count + " to update your data.";
+        }
+        return base + " All " + snapshot.totalCards + " cards are reviewed.";
+    }
+
+    private TextView reviewChip(String label, int strokeColor, int fillColor) {
+        TextView chip = text(label, 11, Colors.TEXT, false);
+        chip.setGravity(Gravity.CENTER);
+        chip.setSingleLine(true);
+        chip.setPadding(dp(8), 0, dp(8), 0);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(fillColor);
+        bg.setStroke(1, strokeColor);
+        bg.setCornerRadius(dp(7));
+        chip.setBackground(bg);
+        return chip;
+    }
+
+    private TextView reviewRatingChip(String label, String rating) {
+        int color = reviewRatingColor(rating);
+        TextView chip = reviewChip(label, color, ColorUtils.withAlpha(color, 32));
+        chip.setTextColor(color);
+        return chip;
+    }
+
+    private int reviewRatingColor(String rating) {
+        String normalized = rating == null ? "" : rating.toLowerCase(Locale.US);
+        if (normalized.contains("distract")) return 0xffff8772;
+        if (normalized.contains("focus")) return 0xff42d0bb;
+        return Colors.IDLE;
     }
 
     private void addReviewScrubber(LinearLayout panel, TimelineCard card) {
@@ -2967,6 +3077,11 @@ public final class MainActivity extends Activity {
     private static void addDuration(Map<String, Long> map, String key, long value) {
         Long current = map.get(key);
         map.put(key, current == null ? value : current + value);
+    }
+
+    private static String clean(String value, String fallback) {
+        if (value == null || value.trim().isEmpty()) return fallback;
+        return value.trim();
     }
 
     private static boolean isUseful(TimelineCard card) {

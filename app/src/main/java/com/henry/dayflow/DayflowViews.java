@@ -364,6 +364,97 @@ final class TimelineReviewScrubberView extends View {
     }
 }
 
+final class ReviewSummaryView extends View {
+    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private ReviewSnapshot snapshot = new ReviewSnapshot();
+
+    ReviewSummaryView(Context context) {
+        super(context);
+        setWillNotDraw(false);
+    }
+
+    void setData(ReviewSnapshot snapshot) {
+        this.snapshot = snapshot == null ? new ReviewSnapshot() : snapshot;
+        invalidate();
+    }
+
+    @Override protected void onDraw(Canvas canvas) {
+        float w = getWidth();
+        if (w <= 0) return;
+        drawBars(canvas, w);
+        drawLegend(canvas, w);
+    }
+
+    private void drawBars(Canvas canvas, float w) {
+        long total = snapshot.reviewedDurationMs();
+        boolean placeholder = total <= 0;
+        long distracted = placeholder ? 1 : snapshot.distractedMs;
+        long neutral = placeholder ? 1 : snapshot.neutralMs;
+        long focused = placeholder ? 1 : snapshot.focusedMs;
+        long sum = Math.max(1, distracted + neutral + focused);
+        long[] values = new long[]{distracted, neutral, focused};
+        int[][] colors = placeholder
+                ? new int[][]{{0xfff0e8e2, 0xffe7ddd6}, {0xfff7f3ef, 0xffeae0db}, {0xfff0e8e2, 0xffe7ddd6}}
+                : new int[][]{{0xffffbdb1, 0xffff8772}, {0xffffffff, 0xffeae0db}, {0xff92f1e3, 0xff42d0bb}};
+        float gap = dp(4);
+        float left = dp(2);
+        float top = dp(12);
+        float height = dp(39);
+        float available = Math.max(1, w - dp(4) - gap * 2);
+        float x = left;
+        for (int i = 0; i < values.length; i++) {
+            float width = i == values.length - 1 ? left + available + gap * 2 - x : available * values[i] / (float) sum;
+            width = Math.max(placeholder ? dp(24) : 0, width);
+            if (width <= 0.5f) continue;
+            RectF rect = new RectF(x, top, Math.min(w - dp(2), x + width), top + height);
+            paint.setShader(new LinearGradient(rect.left, rect.top, rect.right, rect.bottom, colors[i][0], colors[i][1], Shader.TileMode.CLAMP));
+            paint.setStyle(Paint.Style.FILL);
+            canvas.drawRoundRect(rect, dp(4), dp(4), paint);
+            paint.setShader(null);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(1));
+            paint.setColor(colors[i][1]);
+            canvas.drawRoundRect(rect, dp(4), dp(4), paint);
+            paint.setStyle(Paint.Style.FILL);
+            x += width + gap;
+        }
+    }
+
+    private void drawLegend(Canvas canvas, float w) {
+        String[] labels = new String[]{"Distracted", "Neutral", "Focused"};
+        long[] values = new long[]{snapshot.distractedMs, snapshot.neutralMs, snapshot.focusedMs};
+        int[] fills = new int[]{0x66ff8772, 0x66dddbda, 0x6642d0bb};
+        int[] strokes = new int[]{0xffff8772, 0xffdddbda, 0xff42d0bb};
+        float top = dp(78);
+        float colW = w / labels.length;
+        for (int i = 0; i < labels.length; i++) {
+            float x = colW * i + dp(4);
+            RectF swatch = new RectF(x, top - dp(10), x + dp(11), top - dp(2));
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(fills[i]);
+            canvas.drawRoundRect(swatch, dp(3), dp(3), paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(1));
+            paint.setColor(strokes[i]);
+            canvas.drawRoundRect(swatch, dp(3), dp(3), paint);
+            paint.setStyle(Paint.Style.FILL);
+            drawSans(canvas, labels[i], x + dp(16), top - dp(2), dp(10), Colors.MUTED, false);
+            String duration = snapshot.hasData() ? TimeUtil.shortDuration(values[i]) : "0m";
+            drawSans(canvas, duration, x + dp(16), top + dp(18), dp(13), Colors.TEXT, true);
+        }
+    }
+
+    private int dp(float v) { return (int) (v * getResources().getDisplayMetrics().density + 0.5f); }
+    private void drawSans(Canvas c, String text, float x, float y, float size, int color, boolean bold) {
+        paint.setTypeface(DayflowType.sans(getContext(), bold));
+        paint.setTextSize(size);
+        paint.setColor(color);
+        paint.setFakeBoldText(bold);
+        c.drawText(text, x, y, paint);
+        paint.setFakeBoldText(false);
+    }
+}
+
 final class DashboardCanvasView extends View {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private DashboardMetrics metrics = new DashboardMetrics();
