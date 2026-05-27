@@ -1024,8 +1024,8 @@ public final class MainActivity extends Activity {
         panel.addView(serif("Settings", 30, Colors.TEXT));
         String section = settingsSection();
         addSettingsSectionSelector(panel, section);
-        if ("Account".equals(section)) {
-            renderSettingsAccount(panel);
+        if ("Profile".equals(section)) {
+            renderSettingsProfile(panel);
             content.addView(panel);
             return;
         }
@@ -1290,7 +1290,7 @@ public final class MainActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setPadding(0, dp(6), 0, dp(12));
         scroll.addView(row, new HorizontalScrollView.LayoutParams(-2, dp(58)));
-        String[] sections = new String[]{"Account", "Storage", "Privacy", "Providers", "Export", "Other"};
+        String[] sections = new String[]{"Profile", "Storage", "Privacy", "Providers", "Export", "Other"};
         for (String section : sections) {
             Button button = section.equals(selected) ? pillButton(section) : smallButton(section);
             final String target = section;
@@ -1309,15 +1309,15 @@ public final class MainActivity extends Activity {
 
     private String settingsSection() {
         String section = prefs.settingsSection();
-        if ("Account".equals(section) || "Storage".equals(section) || "Privacy".equals(section)
+        if ("Profile".equals(section) || "Storage".equals(section) || "Privacy".equals(section)
                 || "Providers".equals(section) || "Export".equals(section) || "Other".equals(section)) {
             return section;
         }
-        return "Account";
+        return "Profile";
     }
 
-    private void renderSettingsAccount(LinearLayout panel) {
-        panel.addView(text("Account", 13, Colors.MUTED, true));
+    private void renderSettingsProfile(LinearLayout panel) {
+        panel.addView(text("Profile", 13, Colors.MUTED, true));
         panel.addView(text("Local Android build · " + appVersionLabel(), 14, Colors.TEXT, false));
         panel.addView(text("Role: " + prefs.onboardingRole() + "\nProvider: " + prefs.provider() + "\nBackup: " + prefs.backupProvider(), 14, Colors.MUTED, false));
 

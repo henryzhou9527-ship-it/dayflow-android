@@ -29,7 +29,7 @@ final class DayflowPrefs {
     }
 
     String settingsSection() {
-        return prefs.getString("settings_section", "Account");
+        return prefs.getString("settings_section", "Profile");
     }
 
     String geminiApiKey() {
@@ -188,7 +188,7 @@ final class DayflowPrefs {
     }
 
     void setSettingsSection(String section) {
-        prefs.edit().putString("settings_section", section == null || section.trim().isEmpty() ? "Account" : section.trim()).apply();
+        prefs.edit().putString("settings_section", section == null || section.trim().isEmpty() ? "Profile" : section.trim()).apply();
     }
 
     void setProvider(String provider) {

@@ -12,7 +12,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Chat uses saved timeline cards, journal notes, category totals, and recent chat history, then answers through Gemini or Ollama when configured.
 - Provider settings include a backup provider so timeline analysis and chat can retry through another route before falling back locally.
 - Provider setup includes Android-native connection tests for Gemini and Ollama so the selected engine can be checked during onboarding or later in Settings.
-- Settings are organized into Dayflow-like Account, Storage, Privacy, Providers, Export, and Other sections.
+- Settings are organized into Dayflow-like Profile, Storage, Privacy, Providers, Export, and Other sections.
 - Other settings include app preference toggles and an output-language override that is passed into timeline analysis and chat prompts.
 - Adds first-run onboarding, journal entries, daily goals, review ratings, editable categories, storage stats, per-app privacy blocking, day deletion, and reprocessing controls.
 - Timeline and review cards support manual category reassignment and single-card deletion, matching the original Dayflow correction workflow.
@@ -25,7 +25,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Supports timed/indefinite recording pauses and shows saved screenshots plus playable timelapses inside review cards for frame-by-frame context.
 - Review cards include an Android-native touch scrubber that mirrors Dayflow's media review behavior with tap-to-play and drag-to-seek interactions.
 - Weekly view supports Monday-based week navigation, weekly distribution donuts, focus heatmaps, weekly overview footer metrics, weekly workflow grids, time distribution, context-shift comparison charts, top highlights, visual 1:1 suggestions, application interaction summaries, touch treemaps, category-to-app Sankey breakdowns, and app-switching network charts.
-- Onboarding keeps provider setup local/function-focused and does not require Pro or paid-account flows.
+- Onboarding stays local/function-focused and goes straight to permissions and analysis setup.
 - Exports any date range as Markdown through Android's document picker, with clipboard fallback.
 - Reprocesses a specific timeline day by clearing old cards/observations and re-analyzing the original saved batches.
 - Keeps the Dayflow visual language while adapting interactions to Android: bundled Dayflow fonts/assets, warm cream/orange gradients, serif headings, soft white panels, compact timeline cards, touch-first review controls, heatmaps, and productivity dashboards.
