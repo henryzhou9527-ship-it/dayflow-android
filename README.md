@@ -8,7 +8,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Stores screenshots and timeline data locally in SQLite.
 - Uses Usage Access metadata to identify the foreground app.
 - Builds 15-minute analysis batches and rewrites cards with a 45-minute lookback window.
-- Falls back to a local heuristic analyzer when no Gemini API key is configured.
+- Supports heuristic analysis, Gemini vision analysis, and Ollama local vision models such as `qwen3-vl:4b`.
 - Adds journal entries, daily goals, review ratings, editable categories, storage stats, per-app privacy blocking, day deletion, and reprocessing controls.
 - Redacts screenshots for blocked apps while still preserving timeline continuity.
 - Supports timed/indefinite recording pauses and shows saved screenshots inside review cards for frame-by-frame context.

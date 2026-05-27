@@ -48,6 +48,10 @@ final class DayflowPrefs {
         return prefs.getString("ollama_endpoint", "http://127.0.0.1:11434");
     }
 
+    String ollamaModel() {
+        return prefs.getString("ollama_model", "qwen3-vl:4b");
+    }
+
     int retentionDays() {
         return Math.max(1, prefs.getInt("retention_days", 7));
     }
@@ -92,6 +96,10 @@ final class DayflowPrefs {
 
     void setOllamaEndpoint(String endpoint) {
         prefs.edit().putString("ollama_endpoint", endpoint == null ? "" : endpoint.trim()).apply();
+    }
+
+    void setOllamaModel(String model) {
+        prefs.edit().putString("ollama_model", model == null || model.trim().isEmpty() ? "qwen3-vl:4b" : model.trim()).apply();
     }
 
     void setRetentionDays(int days) {

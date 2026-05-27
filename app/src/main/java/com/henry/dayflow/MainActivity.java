@@ -536,7 +536,7 @@ public final class MainActivity extends Activity {
         panel.addView(deleteDay, new LinearLayout.LayoutParams(-1, dp(44)));
 
         panel.addView(text("AI provider", 13, Colors.MUTED, true));
-        final EditText provider = field("Provider: Heuristic or Gemini", prefs.provider(), true);
+        final EditText provider = field("Provider: Heuristic, Gemini, or Ollama", prefs.provider(), true);
         panel.addView(provider, new LinearLayout.LayoutParams(-1, dp(54)));
 
         final Switch cloud = new Switch(this);
@@ -563,6 +563,21 @@ public final class MainActivity extends Activity {
         final EditText ollama = field("Ollama endpoint", prefs.ollamaEndpoint(), true);
         panel.addView(ollama, new LinearLayout.LayoutParams(-1, dp(56)));
 
+        final EditText ollamaModel = field("Ollama vision model", prefs.ollamaModel(), true);
+        panel.addView(ollamaModel, new LinearLayout.LayoutParams(-1, dp(56)));
+
+        Button useOllama = smallButton("Use Ollama local AI");
+        useOllama.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                provider.setText("Ollama");
+                prefs.setProvider("Ollama");
+                prefs.setOllamaEndpoint(ollama.getText().toString());
+                prefs.setOllamaModel(ollamaModel.getText().toString());
+                setStatus("Ollama selected. Analyze now when the local model is running.");
+            }
+        });
+        panel.addView(useOllama, new LinearLayout.LayoutParams(-1, dp(42)));
+
         Button save = pillButton("Save provider settings");
         save.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
@@ -570,6 +585,7 @@ public final class MainActivity extends Activity {
                 prefs.setGeminiApiKey(apiKey.getText().toString());
                 prefs.setGeminiModel(model.getText().toString());
                 prefs.setOllamaEndpoint(ollama.getText().toString());
+                prefs.setOllamaModel(ollamaModel.getText().toString());
                 setStatus("Provider settings saved.");
             }
         });

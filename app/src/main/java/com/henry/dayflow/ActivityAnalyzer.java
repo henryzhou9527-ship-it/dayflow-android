@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 interface ActivityAnalyzer {
@@ -27,16 +28,26 @@ final class HybridActivityAnalyzer implements ActivityAnalyzer {
     private final DayflowPrefs prefs;
     private final ActivityAnalyzer heuristic;
     private final ActivityAnalyzer gemini;
+    private final ActivityAnalyzer ollama;
 
     HybridActivityAnalyzer(Context context) {
         prefs = new DayflowPrefs(context);
         heuristic = new HeuristicActivityAnalyzer();
         gemini = new GeminiActivityAnalyzer(prefs);
+        ollama = new OllamaActivityAnalyzer(prefs);
     }
 
     @Override
     public List<TimelineCard> analyze(long batchId, List<ScreenshotRecord> screenshots, List<TimelineCard> existingCards) throws Exception {
-        if (prefs.useCloudAnalyzer() && !prefs.geminiApiKey().trim().isEmpty()) {
+        String provider = prefs.provider().toLowerCase(Locale.US);
+        if (provider.contains("ollama")) {
+            try {
+                return ollama.analyze(batchId, screenshots, existingCards);
+            } catch (Exception ignored) {
+                return heuristic.analyze(batchId, screenshots, existingCards);
+            }
+        }
+        if ((provider.contains("gemini") || prefs.useCloudAnalyzer()) && !prefs.geminiApiKey().trim().isEmpty()) {
             try {
                 return gemini.analyze(batchId, screenshots, existingCards);
             } catch (Exception ignored) {
@@ -285,6 +296,143 @@ final class GeminiActivityAnalyzer implements ActivityAnalyzer {
         JSONObject content = candidates.getJSONObject(0).getJSONObject("content");
         JSONArray parts = content.getJSONArray("parts");
         return parts.getJSONObject(0).getString("text");
+    }
+
+    private static String stripCodeFence(String text) {
+        String trimmed = text == null ? "" : text.trim();
+        if (trimmed.startsWith("```")) {
+            int firstNewline = trimmed.indexOf('\n');
+            int lastFence = trimmed.lastIndexOf("```");
+            if (firstNewline >= 0 && lastFence > firstNewline) {
+                return trimmed.substring(firstNewline + 1, lastFence).trim();
+            }
+        }
+        return trimmed;
+    }
+}
+
+final class OllamaActivityAnalyzer implements ActivityAnalyzer {
+    private final DayflowPrefs prefs;
+
+    OllamaActivityAnalyzer(DayflowPrefs prefs) {
+        this.prefs = prefs;
+    }
+
+    @Override
+    public List<TimelineCard> analyze(long batchId, List<ScreenshotRecord> screenshots, List<TimelineCard> existingCards) throws Exception {
+        JSONArray images = new JSONArray();
+        for (ScreenshotRecord screenshot : sample(screenshots, 6)) {
+            byte[] data = readBytes(new File(screenshot.filePath), 900_000);
+            images.put(Base64.encodeToString(data, Base64.NO_WRAP));
+        }
+
+        JSONObject body = new JSONObject()
+                .put("model", prefs.ollamaModel())
+                .put("prompt", promptFor(screenshots, existingCards))
+                .put("images", images)
+                .put("stream", false)
+                .put("options", new JSONObject().put("temperature", 0.2));
+
+        String endpoint = prefs.ollamaEndpoint();
+        if (endpoint == null || endpoint.trim().isEmpty()) endpoint = "http://127.0.0.1:11434";
+        endpoint = endpoint.endsWith("/") ? endpoint.substring(0, endpoint.length() - 1) : endpoint;
+        String response = postJson(endpoint + "/api/generate", body.toString());
+        String text = new JSONObject(response).optString("response", "");
+        return parseCards(batchId, screenshots, text);
+    }
+
+    private String promptFor(List<ScreenshotRecord> screenshots, List<TimelineCard> existingCards) {
+        ScreenshotRecord first = screenshots.get(0);
+        ScreenshotRecord last = screenshots.get(screenshots.size() - 1);
+        StringBuilder metadata = new StringBuilder();
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (ScreenshotRecord screenshot : screenshots) {
+            String label = screenshot.appLabel == null ? "Unknown" : screenshot.appLabel;
+            Integer count = counts.get(label);
+            counts.put(label, count == null ? 1 : count + 1);
+        }
+        for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+            metadata.append("- ").append(entry.getKey()).append(": ").append(entry.getValue()).append(" samples\n");
+        }
+
+        return "You are Dayflow, a private automatic work journal. "
+                + "Look at the Android screenshots and foreground app metadata, then return ONLY a JSON array. "
+                + "Each object must include startMs, endMs, category, subcategory, title, summary, detailedSummary, app. "
+                + "Allowed categories: Work, Communication, Personal, Distraction, Idle. "
+                + "Write concise first-person journal-style summaries without saying 'the user'. "
+                + "Keep cards chronological, non-overlapping, and within " + first.capturedAtMs + " and " + last.capturedAtMs + ". "
+                + "If several screenshots show the same activity, merge them into one card. "
+                + "Foreground metadata:\n" + metadata;
+    }
+
+    private List<TimelineCard> parseCards(long batchId, List<ScreenshotRecord> screenshots, String text) throws Exception {
+        JSONArray array = new JSONArray(stripCodeFence(text));
+        long min = screenshots.get(0).capturedAtMs;
+        long max = screenshots.get(screenshots.size() - 1).capturedAtMs;
+        List<TimelineCard> cards = new ArrayList<>();
+        for (int i = 0; i < array.length(); i++) {
+            JSONObject obj = array.getJSONObject(i);
+            TimelineCard card = new TimelineCard();
+            card.batchId = batchId;
+            card.startMs = TimeUtil.clamp(obj.optLong("startMs", min), min, max);
+            card.endMs = TimeUtil.clamp(obj.optLong("endMs", max), card.startMs + TimeUtil.MINUTE, max);
+            card.day = TimeUtil.dayKey(card.startMs);
+            card.category = obj.optString("category", "Work");
+            card.subcategory = obj.optString("subcategory", "");
+            card.title = obj.optString("title", "Activity");
+            card.summary = obj.optString("summary", "");
+            card.detailedSummary = obj.optString("detailedSummary", card.summary);
+            card.metadata = "app=" + obj.optString("app", "") + ";source=ollama;model=" + prefs.ollamaModel() + ";";
+            cards.add(card);
+        }
+        if (cards.isEmpty()) throw new IllegalStateException("Ollama returned no cards");
+        return cards;
+    }
+
+    private static List<ScreenshotRecord> sample(List<ScreenshotRecord> screenshots, int max) {
+        if (screenshots.size() <= max) return screenshots;
+        List<ScreenshotRecord> result = new ArrayList<>();
+        for (int i = 0; i < max; i++) {
+            int index = Math.round(i * (screenshots.size() - 1) / (float) (max - 1));
+            result.add(screenshots.get(index));
+        }
+        return result;
+    }
+
+    private static byte[] readBytes(File file, int maxBytes) throws Exception {
+        InputStream in = new FileInputStream(file);
+        try {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = in.read(buffer)) != -1 && out.size() < maxBytes) {
+                out.write(buffer, 0, Math.min(read, maxBytes - out.size()));
+            }
+            return out.toByteArray();
+        } finally {
+            in.close();
+        }
+    }
+
+    private static String postJson(String endpoint, String json) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
+        connection.setConnectTimeout(15_000);
+        connection.setReadTimeout(120_000);
+        connection.setRequestMethod("POST");
+        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+        connection.setDoOutput(true);
+        OutputStream out = connection.getOutputStream();
+        out.write(json.getBytes(StandardCharsets.UTF_8));
+        out.close();
+
+        InputStream in = connection.getResponseCode() >= 400 ? connection.getErrorStream() : connection.getInputStream();
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        byte[] chunk = new byte[8192];
+        int read;
+        while ((read = in.read(chunk)) != -1) buffer.write(chunk, 0, read);
+        String response = buffer.toString("UTF-8");
+        if (connection.getResponseCode() >= 400) throw new IllegalStateException(response);
+        return response;
     }
 
     private static String stripCodeFence(String text) {
