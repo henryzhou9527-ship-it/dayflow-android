@@ -137,8 +137,8 @@ final class DayflowPrefs {
         return prefs.getString("onboarding_referral", "");
     }
 
-    boolean onboardingHasPaidAi() {
-        return prefs.getBoolean("onboarding_has_paid_ai", false);
+    boolean onboardingPreferLocalFirst() {
+        return prefs.getBoolean("onboarding_prefer_local_first", true);
     }
 
     boolean isPaused() {
@@ -280,8 +280,8 @@ final class DayflowPrefs {
         prefs.edit().putString("onboarding_referral", referral == null ? "" : referral.trim()).apply();
     }
 
-    void setOnboardingHasPaidAi(boolean value) {
-        prefs.edit().putBoolean("onboarding_has_paid_ai", value).apply();
+    void setOnboardingPreferLocalFirst(boolean value) {
+        prefs.edit().putBoolean("onboarding_prefer_local_first", value).apply();
     }
 
     void pauseFor(long durationMs) {

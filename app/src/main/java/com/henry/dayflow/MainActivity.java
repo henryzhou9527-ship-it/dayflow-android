@@ -277,18 +277,18 @@ public final class MainActivity extends Activity {
     private void renderOnboardingPreferences() {
         LinearLayout panel = panel();
         panel.addView(serif("A quick preference check", 28, Colors.TEXT));
-        panel.addView(text("Dayflow asks how you found it and whether you already have a paid AI account before recommending a provider.", 14, Colors.MUTED, false));
+        panel.addView(text("Dayflow asks how you found it and how you want analysis to run before recommending a provider.", 14, Colors.MUTED, false));
 
         final EditText referral = field("How did you hear about Dayflow?", prefs.onboardingReferral(), false);
         panel.addView(referral, new LinearLayout.LayoutParams(-1, dp(92)));
 
-        final Switch paidAi = new Switch(this);
-        paidAi.setText("I already have access to Gemini, ChatGPT, Claude, or a local model");
-        paidAi.setTextColor(Colors.TEXT);
-        paidAi.setTextSize(13);
-        paidAi.setTypeface(DayflowType.sans(this));
-        paidAi.setChecked(prefs.onboardingHasPaidAi());
-        panel.addView(paidAi);
+        final Switch localFirst = new Switch(this);
+        localFirst.setText("Prefer local/offline analysis first");
+        localFirst.setTextColor(Colors.TEXT);
+        localFirst.setTextSize(13);
+        localFirst.setTypeface(DayflowType.sans(this));
+        localFirst.setChecked(prefs.onboardingPreferLocalFirst());
+        panel.addView(localFirst);
 
         LinearLayout actions = row();
         Button back = smallButton("Back");
@@ -299,7 +299,7 @@ public final class MainActivity extends Activity {
         next.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
                 prefs.setOnboardingReferral(referral.getText().toString());
-                prefs.setOnboardingHasPaidAi(paidAi.isChecked());
+                prefs.setOnboardingPreferLocalFirst(localFirst.isChecked());
                 goOnboarding(3);
             }
         });
@@ -697,6 +697,17 @@ public final class MainActivity extends Activity {
         weekly.setCards(start, cards);
         content.addView(weekly, new LinearLayout.LayoutParams(-1, dp(520)));
         addGap(14);
+
+        WeeklyTreemapView treemap = new WeeklyTreemapView(this);
+        treemap.setCards(cards, previousCards);
+        content.addView(treemap, new LinearLayout.LayoutParams(-1, dp(430)));
+        addGap(14);
+
+        WeeklyInteractionGraphView graph = new WeeklyInteractionGraphView(this);
+        graph.setCards(cards);
+        content.addView(graph, new LinearLayout.LayoutParams(-1, dp(520)));
+        addGap(14);
+
         renderWeeklyInsights(start, cards, previousCards);
     }
 

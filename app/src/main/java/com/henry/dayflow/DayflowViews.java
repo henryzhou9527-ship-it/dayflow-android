@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -20,8 +21,14 @@ import android.widget.FrameLayout;
 import java.io.File;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 final class GradientFrameLayout extends FrameLayout {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -682,6 +689,791 @@ final class WeeklyCanvasView extends View {
         paint.setTextSize(size);
         paint.setColor(color);
         c.drawText(text, x, y, paint);
+    }
+}
+
+final class WeeklyTreemapView extends View {
+    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final List<AppTile> drawnTiles = new ArrayList<>();
+    private List<TimelineCard> cards = new ArrayList<>();
+    private List<TimelineCard> previousCards = new ArrayList<>();
+    private AppTile selectedTile;
+
+    WeeklyTreemapView(Context context) {
+        super(context);
+        setMinimumHeight(dp(430));
+        setWillNotDraw(false);
+    }
+
+    void setCards(List<TimelineCard> cards, List<TimelineCard> previousCards) {
+        this.cards = cards == null ? new ArrayList<TimelineCard>() : cards;
+        this.previousCards = previousCards == null ? new ArrayList<TimelineCard>() : previousCards;
+        selectedTile = null;
+        invalidate();
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        drawnTiles.clear();
+        drawPanel(canvas, 0, 0, getWidth(), getHeight());
+        drawSerif(canvas, "Most used per category", dp(18), dp(38), dp(23), Colors.ACCENT);
+        drawSans(canvas, "Apps grouped by category with prior-week deltas.", dp(18), dp(62), dp(12), Colors.MUTED);
+
+        List<CategoryBucket> buckets = buildBuckets();
+        if (buckets.isEmpty()) {
+            drawEmpty(canvas, "Treemap fills in after Dayflow has analyzed app-labeled timeline cards.");
+            return;
+        }
+
+        RectF content = new RectF(dp(14), dp(88), getWidth() - dp(14), getHeight() - dp(74));
+        layoutCategories(buckets, content);
+        for (CategoryBucket category : buckets) {
+            drawCategory(canvas, category);
+        }
+        drawSelection(canvas);
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        if (event.getAction() != MotionEvent.ACTION_UP) return true;
+        for (AppTile tile : drawnTiles) {
+            if (tile.frame != null && tile.frame.contains(event.getX(), event.getY())) {
+                selectedTile = tile;
+                invalidate();
+                return true;
+            }
+        }
+        selectedTile = null;
+        invalidate();
+        return true;
+    }
+
+    private void drawCategory(Canvas canvas, CategoryBucket category) {
+        paint.setColor(ColorUtils.withAlpha(category.color, 32));
+        canvas.drawRoundRect(category.frame, dp(10), dp(10), paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(1));
+        paint.setColor(ColorUtils.withAlpha(category.color, 145));
+        canvas.drawRoundRect(category.frame, dp(10), dp(10), paint);
+        paint.setStyle(Paint.Style.FILL);
+
+        drawSans(canvas, fitText(category.name, category.frame.width() - dp(92), dp(13), true),
+                category.frame.left + dp(10), category.frame.top + dp(20), dp(13), category.color);
+        drawSans(canvas, TimeUtil.shortDuration(category.durationMs),
+                category.frame.right - dp(72), category.frame.top + dp(20), dp(11), Colors.MUTED);
+
+        for (AppTile tile : category.tiles) {
+            drawTile(canvas, tile);
+        }
+    }
+
+    private void drawTile(Canvas canvas, AppTile tile) {
+        if (tile.frame == null || tile.frame.width() < dp(8) || tile.frame.height() < dp(8)) return;
+        drawnTiles.add(tile);
+        boolean selected = selectedTile != null && selectedTile.key.equals(tile.key);
+        int fillAlpha = selected ? 235 : 170;
+        paint.setColor(ColorUtils.withAlpha(tile.color, fillAlpha));
+        canvas.drawRoundRect(tile.frame, dp(6), dp(6), paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(selected ? dp(2) : dp(1));
+        paint.setColor(selected ? Colors.TEXT : ColorUtils.withAlpha(tile.color, 190));
+        canvas.drawRoundRect(tile.frame, dp(6), dp(6), paint);
+        paint.setStyle(Paint.Style.FILL);
+
+        if (tile.frame.width() > dp(46) && tile.frame.height() > dp(30)) {
+            float textWidth = tile.frame.width() - dp(14);
+            drawSans(canvas, fitText(tile.appName, textWidth, dp(12), true),
+                    tile.frame.left + dp(7), tile.frame.top + dp(17), dp(12), Colors.TEXT);
+            if (tile.frame.height() > dp(48)) {
+                drawSans(canvas, TimeUtil.shortDuration(tile.durationMs),
+                        tile.frame.left + dp(7), tile.frame.top + dp(35), dp(11), Colors.MUTED);
+            }
+        }
+    }
+
+    private void drawSelection(Canvas canvas) {
+        AppTile tile = selectedTile;
+        if (tile == null && !drawnTiles.isEmpty()) tile = drawnTiles.get(0);
+        if (tile == null) return;
+        RectF detail = new RectF(dp(14), getHeight() - dp(60), getWidth() - dp(14), getHeight() - dp(14));
+        paint.setColor(Colors.CARD_ALT);
+        canvas.drawRoundRect(detail, dp(10), dp(10), paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(1));
+        paint.setColor(Colors.STROKE);
+        canvas.drawRoundRect(detail, dp(10), dp(10), paint);
+        paint.setStyle(Paint.Style.FILL);
+
+        String delta = deltaText(tile.durationMs - tile.previousDurationMs);
+        drawSans(canvas, fitText(tile.appName + " / " + tile.categoryName, detail.width() - dp(28), dp(13), true),
+                detail.left + dp(12), detail.top + dp(18), dp(13), Colors.TEXT);
+        drawSans(canvas, TimeUtil.shortDuration(tile.durationMs) + " this week · " + delta + " vs previous",
+                detail.left + dp(12), detail.top + dp(36), dp(12), delta.startsWith("+") ? Colors.WORK : Colors.MUTED);
+    }
+
+    private void drawEmpty(Canvas canvas, String message) {
+        RectF box = new RectF(dp(18), dp(96), getWidth() - dp(18), dp(178));
+        paint.setColor(Colors.CARD_ALT);
+        canvas.drawRoundRect(box, dp(12), dp(12), paint);
+        drawSans(canvas, message, box.left + dp(12), box.top + dp(38), dp(13), Colors.MUTED);
+    }
+
+    private List<CategoryBucket> buildBuckets() {
+        Map<String, Long> previous = aggregateAppCategory(previousCards);
+        Map<String, CategoryBucket> categories = new LinkedHashMap<>();
+        for (TimelineCard card : cards) {
+            if (isIgnored(card)) continue;
+            String categoryName = clean(card.category, "Work");
+            String appName = clean(appFromMetadata(card.metadata), "Unknown app");
+            String categoryKey = categoryName.toLowerCase(LocaleSafe.US);
+            String tileKey = categoryKey + "|" + appName.toLowerCase(LocaleSafe.US);
+            CategoryBucket bucket = categories.get(categoryKey);
+            if (bucket == null) {
+                bucket = new CategoryBucket(categoryKey, categoryName, Colors.colorForCategory(categoryName));
+                categories.put(categoryKey, bucket);
+            }
+            AppTile tile = bucket.tileByKey.get(tileKey);
+            if (tile == null) {
+                tile = new AppTile(tileKey, categoryName, appName, shadeForApp(appName, categoryName));
+                tile.previousDurationMs = previous.containsKey(tileKey) ? previous.get(tileKey) : 0;
+                bucket.tileByKey.put(tileKey, tile);
+                bucket.tiles.add(tile);
+            }
+            long duration = card.durationMs();
+            tile.durationMs += duration;
+            bucket.durationMs += duration;
+        }
+        List<CategoryBucket> result = new ArrayList<>(categories.values());
+        Collections.sort(result, new Comparator<CategoryBucket>() {
+            @Override public int compare(CategoryBucket a, CategoryBucket b) {
+                return Long.compare(b.durationMs, a.durationMs);
+            }
+        });
+        if (result.size() > 5) result = new ArrayList<>(result.subList(0, 5));
+        for (CategoryBucket bucket : result) {
+            Collections.sort(bucket.tiles, new Comparator<AppTile>() {
+                @Override public int compare(AppTile a, AppTile b) {
+                    return Long.compare(b.durationMs, a.durationMs);
+                }
+            });
+            if (bucket.tiles.size() > 8) {
+                List<AppTile> visible = new ArrayList<>(bucket.tiles.subList(0, 7));
+                AppTile other = new AppTile(bucket.key + "|other", bucket.name, "Other", Colors.IDLE);
+                for (int i = 7; i < bucket.tiles.size(); i++) {
+                    other.durationMs += bucket.tiles.get(i).durationMs;
+                    other.previousDurationMs += bucket.tiles.get(i).previousDurationMs;
+                }
+                visible.add(other);
+                bucket.tiles = visible;
+            }
+        }
+        return result;
+    }
+
+    private Map<String, Long> aggregateAppCategory(List<TimelineCard> source) {
+        Map<String, Long> map = new HashMap<>();
+        for (TimelineCard card : source) {
+            if (isIgnored(card)) continue;
+            String categoryName = clean(card.category, "Work");
+            String appName = clean(appFromMetadata(card.metadata), "Unknown app");
+            String key = categoryName.toLowerCase(LocaleSafe.US) + "|" + appName.toLowerCase(LocaleSafe.US);
+            Long current = map.get(key);
+            map.put(key, current == null ? card.durationMs() : current + card.durationMs());
+        }
+        return map;
+    }
+
+    private void layoutCategories(List<CategoryBucket> categories, RectF rect) {
+        List<WeightedFrame<CategoryBucket>> frames = new ArrayList<>();
+        layoutWeighted(categories, rect, new Weight<CategoryBucket>() {
+            @Override public long value(CategoryBucket item) { return item.durationMs; }
+        }, frames, 0);
+        for (WeightedFrame<CategoryBucket> frame : frames) {
+            CategoryBucket category = frame.item;
+            category.frame = inset(frame.frame, dp(3));
+            RectF appsRect = new RectF(category.frame.left + dp(6), category.frame.top + dp(28),
+                    category.frame.right - dp(6), category.frame.bottom - dp(6));
+            List<WeightedFrame<AppTile>> appFrames = new ArrayList<>();
+            layoutWeighted(category.tiles, appsRect, new Weight<AppTile>() {
+                @Override public long value(AppTile item) { return item.durationMs; }
+            }, appFrames, 0);
+            for (WeightedFrame<AppTile> appFrame : appFrames) {
+                appFrame.item.frame = inset(appFrame.frame, dp(2));
+            }
+        }
+    }
+
+    private <T> void layoutWeighted(List<T> items, RectF rect, Weight<T> weight, List<WeightedFrame<T>> out, int depth) {
+        if (items.isEmpty() || rect.width() <= 0 || rect.height() <= 0) return;
+        if (items.size() == 1) {
+            out.add(new WeightedFrame<T>(items.get(0), new RectF(rect)));
+            return;
+        }
+        long total = 0;
+        for (T item : items) total += Math.max(1, weight.value(item));
+        long half = total / 2;
+        long running = 0;
+        int split = 0;
+        for (int i = 0; i < items.size() - 1; i++) {
+            long next = running + Math.max(1, weight.value(items.get(i)));
+            split = i + 1;
+            running = next;
+            if (next >= half) break;
+        }
+        float ratio = total <= 0 ? 0.5f : (float) running / (float) total;
+        RectF first = new RectF(rect);
+        RectF second = new RectF(rect);
+        if ((depth % 2 == 0 && rect.width() >= rect.height()) || rect.width() > rect.height() * 1.35f) {
+            first.right = rect.left + rect.width() * ratio;
+            second.left = first.right;
+        } else {
+            first.bottom = rect.top + rect.height() * ratio;
+            second.top = first.bottom;
+        }
+        layoutWeighted(items.subList(0, split), first, weight, out, depth + 1);
+        layoutWeighted(items.subList(split, items.size()), second, weight, out, depth + 1);
+    }
+
+    private static RectF inset(RectF rect, float inset) {
+        return new RectF(rect.left + inset, rect.top + inset, rect.right - inset, rect.bottom - inset);
+    }
+
+    private static String deltaText(long deltaMs) {
+        if (Math.abs(deltaMs) < TimeUtil.MINUTE) return "flat";
+        return (deltaMs >= 0 ? "+" : "-") + TimeUtil.shortDuration(Math.abs(deltaMs));
+    }
+
+    private static boolean isIgnored(TimelineCard card) {
+        String category = card.category == null ? "" : card.category.toLowerCase(LocaleSafe.US);
+        return category.contains("idle") || category.contains("system");
+    }
+
+    private static int shadeForApp(String appName, String categoryName) {
+        int base = Colors.colorForCategory(categoryName);
+        int shift = Math.abs((appName == null ? "" : appName).hashCode()) % 32;
+        int r = Math.min(255, Color.red(base) + shift);
+        int g = Math.max(0, Color.green(base) - shift / 2);
+        int b = Math.min(255, Color.blue(base) + shift / 3);
+        return Color.rgb(r, g, b);
+    }
+
+    private void drawPanel(Canvas c, float x, float y, float w, float h) {
+        paint.setColor(Colors.CARD);
+        c.drawRoundRect(new RectF(x, y, x + w, y + h), dp(16), dp(16), paint);
+    }
+
+    private int dp(float v) { return (int) (v * getResources().getDisplayMetrics().density + 0.5f); }
+    private void drawSerif(Canvas c, String text, float x, float y, float size, int color) {
+        paint.setTypeface(DayflowType.serif(getContext()));
+        paint.setTextSize(size);
+        paint.setColor(color);
+        c.drawText(text, x, y, paint);
+    }
+    private void drawSans(Canvas c, String text, float x, float y, float size, int color) {
+        paint.setTypeface(DayflowType.sans(getContext(), false));
+        paint.setTextSize(size);
+        paint.setColor(color);
+        c.drawText(text, x, y, paint);
+    }
+
+    private String fitText(String text, float width, float size, boolean bold) {
+        paint.setTypeface(DayflowType.sans(getContext(), bold));
+        paint.setTextSize(size);
+        if (paint.measureText(text) <= width) return text;
+        String suffix = "...";
+        int end = text.length();
+        while (end > 1 && paint.measureText(text.substring(0, end) + suffix) > width) end--;
+        return text.substring(0, Math.max(1, end)) + suffix;
+    }
+
+    private static String appFromMetadata(String metadata) {
+        if (metadata == null) return null;
+        String marker = "app=";
+        int start = metadata.indexOf(marker);
+        if (start < 0) return null;
+        int end = metadata.indexOf(';', start);
+        String app = end > start ? metadata.substring(start + marker.length(), end) : metadata.substring(start + marker.length());
+        app = app.trim();
+        return app.isEmpty() ? null : app;
+    }
+
+    private static String clean(String value, String fallback) {
+        if (value == null) return fallback;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? fallback : trimmed;
+    }
+
+    private interface Weight<T> {
+        long value(T item);
+    }
+
+    private static final class WeightedFrame<T> {
+        final T item;
+        final RectF frame;
+        WeightedFrame(T item, RectF frame) {
+            this.item = item;
+            this.frame = frame;
+        }
+    }
+
+    private static final class CategoryBucket {
+        final String key;
+        final String name;
+        final int color;
+        long durationMs;
+        RectF frame = new RectF();
+        List<AppTile> tiles = new ArrayList<>();
+        final Map<String, AppTile> tileByKey = new LinkedHashMap<>();
+        CategoryBucket(String key, String name, int color) {
+            this.key = key;
+            this.name = name;
+            this.color = color;
+        }
+    }
+
+    private static final class AppTile {
+        final String key;
+        final String categoryName;
+        final String appName;
+        final int color;
+        long durationMs;
+        long previousDurationMs;
+        RectF frame;
+        AppTile(String key, String categoryName, String appName, int color) {
+            this.key = key;
+            this.categoryName = categoryName;
+            this.appName = appName;
+            this.color = color;
+        }
+    }
+}
+
+final class WeeklyInteractionGraphView extends View {
+    private static final float[][] POSITIONS = new float[][]{
+            {256.5f, 253.3f}, {106.5f, 411.3f}, {134f, 154.3f}, {220f, 136.8f},
+            {308.5f, 167.8f}, {342.5f, 108.8f}, {436.1f, 142.8f}, {501.5f, 255.8f},
+            {391.1f, 310.8f}, {391.5f, 415.8f}, {296f, 380.3f}, {62f, 304.8f},
+            {111f, 233.8f}, {179.5f, 343.3f}
+    };
+    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private List<TimelineCard> cards = new ArrayList<>();
+    private List<AppNode> nodes = new ArrayList<>();
+    private List<AppEdge> edges = new ArrayList<>();
+    private AppNode selectedNode;
+
+    WeeklyInteractionGraphView(Context context) {
+        super(context);
+        setMinimumHeight(dp(520));
+        setWillNotDraw(false);
+    }
+
+    void setCards(List<TimelineCard> cards) {
+        this.cards = cards == null ? new ArrayList<TimelineCard>() : cards;
+        selectedNode = null;
+        rebuild();
+        invalidate();
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        drawPanel(canvas, 0, 0, getWidth(), getHeight());
+        drawSerif(canvas, "Interactions between most used applications", dp(18), dp(38), dp(21), Colors.ACCENT);
+        drawSans(canvas, subtitle(), dp(18), dp(60), dp(12), Colors.MUTED);
+        if (nodes.isEmpty()) {
+            drawEmpty(canvas, "Application relationships appear after Usage Access and analyzed timeline cards are available.");
+            return;
+        }
+
+        RectF network = new RectF(dp(12), dp(78), getWidth() - dp(12), getHeight() - dp(118));
+        placeNodes(network);
+        drawEdges(canvas);
+        drawNodes(canvas);
+        drawLegend(canvas, network);
+        drawPatterns(canvas);
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        if (event.getAction() != MotionEvent.ACTION_UP) return true;
+        AppNode best = null;
+        float bestDistance = Float.MAX_VALUE;
+        for (AppNode node : nodes) {
+            float dx = event.getX() - node.cx;
+            float dy = event.getY() - node.cy;
+            float distance = (float) Math.sqrt(dx * dx + dy * dy);
+            if (distance <= node.radius + dp(12) && distance < bestDistance) {
+                best = node;
+                bestDistance = distance;
+            }
+        }
+        selectedNode = best;
+        invalidate();
+        return true;
+    }
+
+    private void rebuild() {
+        Map<String, AppNode> nodeMap = new LinkedHashMap<>();
+        List<TimelineCard> sorted = new ArrayList<>(cards);
+        Collections.sort(sorted, new Comparator<TimelineCard>() {
+            @Override public int compare(TimelineCard a, TimelineCard b) {
+                return Long.compare(a.startMs, b.startMs);
+            }
+        });
+        for (TimelineCard card : sorted) {
+            if (isIgnored(card)) continue;
+            String app = clean(appFromMetadata(card.metadata), "Unknown app");
+            String key = normalized(app);
+            AppNode node = nodeMap.get(key);
+            if (node == null) {
+                node = new AppNode(key, app, appKind(app, card.category), shadeForApp(app, card.category));
+                nodeMap.put(key, node);
+            }
+            node.durationMs += card.durationMs();
+            node.visits++;
+            if (node.kind != Kind.DISTRACTION && appKind(app, card.category) == Kind.DISTRACTION) node.kind = Kind.DISTRACTION;
+        }
+        nodes = new ArrayList<>(nodeMap.values());
+        Collections.sort(nodes, new Comparator<AppNode>() {
+            @Override public int compare(AppNode a, AppNode b) {
+                return Long.compare(b.durationMs, a.durationMs);
+            }
+        });
+        if (nodes.size() > 14) nodes = new ArrayList<>(nodes.subList(0, 14));
+        long maxDuration = 1;
+        Set<String> visibleKeys = new HashSet<>();
+        for (AppNode node : nodes) {
+            maxDuration = Math.max(maxDuration, node.durationMs);
+            visibleKeys.add(node.key);
+        }
+        for (int i = 0; i < nodes.size(); i++) {
+            AppNode node = nodes.get(i);
+            node.primary = i == 0;
+            node.muted = i > 5;
+            node.radius = dp(i == 0 ? 38 : 17 + (float) Math.sqrt((double) node.durationMs / (double) maxDuration) * 14f);
+        }
+        buildEdges(sorted, visibleKeys);
+    }
+
+    private void buildEdges(List<TimelineCard> sorted, Set<String> visibleKeys) {
+        Map<String, AppEdge> edgeMap = new LinkedHashMap<>();
+        String previousDay = null;
+        String previousKey = null;
+        for (TimelineCard card : sorted) {
+            if (isIgnored(card)) continue;
+            String app = clean(appFromMetadata(card.metadata), "Unknown app");
+            String key = normalized(app);
+            if (!visibleKeys.contains(key)) continue;
+            String day = card.day == null ? TimeUtil.dayKey(card.startMs) : card.day;
+            if (previousKey != null && previousDay != null && previousDay.equals(day) && !previousKey.equals(key)) {
+                String edgeKey = previousKey + "|" + key;
+                AppEdge edge = edgeMap.get(edgeKey);
+                if (edge == null) {
+                    edge = new AppEdge(previousKey, key);
+                    edgeMap.put(edgeKey, edge);
+                }
+                edge.count++;
+            }
+            previousKey = key;
+            previousDay = day;
+        }
+        edges = new ArrayList<>(edgeMap.values());
+        Collections.sort(edges, new Comparator<AppEdge>() {
+            @Override public int compare(AppEdge a, AppEdge b) {
+                return Integer.compare(b.count, a.count);
+            }
+        });
+        if (edges.size() > 18) edges = new ArrayList<>(edges.subList(0, 18));
+    }
+
+    private void placeNodes(RectF network) {
+        float maxX = 565f;
+        float maxY = 430f;
+        for (int i = 0; i < nodes.size(); i++) {
+            AppNode node = nodes.get(i);
+            float[] pos = POSITIONS[i % POSITIONS.length];
+            node.cx = network.left + (pos[0] / maxX) * network.width();
+            node.cy = network.top + ((pos[1] - 70f) / maxY) * network.height();
+            node.cy = Math.max(network.top + node.radius, Math.min(network.bottom - node.radius, node.cy));
+        }
+    }
+
+    private void drawEdges(Canvas canvas) {
+        int max = 1;
+        Map<String, AppNode> byKey = nodeByKey();
+        for (AppEdge edge : edges) max = Math.max(max, edge.count);
+        int index = 0;
+        for (AppEdge edge : edges) {
+            AppNode from = byKey.get(edge.fromKey);
+            AppNode to = byKey.get(edge.toKey);
+            if (from == null || to == null) continue;
+            boolean active = selectedNode == null || selectedNode.key.equals(from.key) || selectedNode.key.equals(to.key);
+            Kind kind = edgeKind(from.kind, to.kind);
+            paint.setColor(ColorUtils.withAlpha(colorForKind(kind), active ? 150 : 36));
+            paint.setStrokeWidth(dp(1.2f + 4.2f * ((float) edge.count / (float) max)));
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            Path path = new Path();
+            path.moveTo(from.cx, from.cy);
+            float curve = ((index % 2 == 0) ? -1 : 1) * dp(28 + (index % 5) * 7);
+            path.quadTo((from.cx + to.cx) / 2f, (from.cy + to.cy) / 2f + curve, to.cx, to.cy);
+            canvas.drawPath(path, paint);
+            paint.setStyle(Paint.Style.FILL);
+            index++;
+        }
+    }
+
+    private void drawNodes(Canvas canvas) {
+        for (AppNode node : nodes) {
+            boolean selected = selectedNode != null && selectedNode.key.equals(node.key);
+            boolean active = selectedNode == null || selected;
+            int alpha = active ? (node.muted ? 160 : 245) : 70;
+            paint.setColor(ColorUtils.withAlpha(fillForKind(node.kind), alpha));
+            canvas.drawCircle(node.cx, node.cy, node.radius, paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(selected || node.primary ? dp(3) : dp(2));
+            paint.setColor(ColorUtils.withAlpha(colorForKind(node.kind), active ? 235 : 90));
+            canvas.drawCircle(node.cx, node.cy, node.radius, paint);
+            paint.setStyle(Paint.Style.FILL);
+            drawCentered(canvas, initial(node.name), node.cx, node.cy + dp(5), node.primary ? dp(20) : dp(13),
+                    node.kind == Kind.WORK ? Colors.WORK : Colors.MUTED, true);
+            if (selected || node.primary) {
+                drawCentered(canvas, fitText(node.name, dp(120), dp(12), true), node.cx, node.cy + node.radius + dp(16),
+                        dp(12), Colors.TEXT, true);
+            }
+        }
+    }
+
+    private void drawLegend(Canvas canvas, RectF network) {
+        float y = network.bottom + dp(18);
+        legend(canvas, "Work", Colors.WORK, network.left + dp(10), y);
+        legend(canvas, "Personal", Colors.PERSONAL, network.left + dp(104), y);
+        legend(canvas, "Distraction", Colors.DISTRACTION, network.left + dp(220), y);
+    }
+
+    private void legend(Canvas canvas, String label, int color, float x, float y) {
+        paint.setColor(ColorUtils.withAlpha(color, 70));
+        canvas.drawRoundRect(new RectF(x, y - dp(12), x + dp(14), y), dp(2), dp(2), paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(1));
+        paint.setColor(color);
+        canvas.drawRoundRect(new RectF(x, y - dp(12), x + dp(14), y), dp(2), dp(2), paint);
+        paint.setStyle(Paint.Style.FILL);
+        drawSans(canvas, label, x + dp(20), y, dp(12), Colors.TEXT);
+    }
+
+    private void drawPatterns(Canvas canvas) {
+        RectF detail = new RectF(dp(14), getHeight() - dp(78), getWidth() - dp(14), getHeight() - dp(14));
+        paint.setColor(Colors.CARD_ALT);
+        canvas.drawRoundRect(detail, dp(10), dp(10), paint);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(1));
+        paint.setColor(Colors.STROKE);
+        canvas.drawRoundRect(detail, dp(10), dp(10), paint);
+        paint.setStyle(Paint.Style.FILL);
+
+        String line;
+        if (selectedNode != null) {
+            line = selectedNode.name + " · " + TimeUtil.shortDuration(selectedNode.durationMs)
+                    + " · " + selectedNode.visits + " visits";
+            String switches = switchesFor(selectedNode);
+            if (!switches.isEmpty()) line += "\n" + switches;
+        } else if (!edges.isEmpty()) {
+            AppEdge top = edges.get(0);
+            Map<String, AppNode> byKey = nodeByKey();
+            AppNode from = byKey.get(top.fromKey);
+            AppNode to = byKey.get(top.toKey);
+            line = "Most common switch: " + (from == null ? top.fromKey : from.name)
+                    + " -> " + (to == null ? top.toKey : to.name) + " · " + top.count + "x";
+        } else {
+            line = "No repeated switches yet. Capture more cards to reveal weekly patterns.";
+        }
+        String[] parts = line.split("\\n", 2);
+        drawSans(canvas, fitText(parts[0], detail.width() - dp(24), dp(13), true),
+                detail.left + dp(12), detail.top + dp(22), dp(13), Colors.TEXT);
+        if (parts.length > 1) {
+            drawSans(canvas, fitText(parts[1], detail.width() - dp(24), dp(12), false),
+                    detail.left + dp(12), detail.top + dp(44), dp(12), Colors.MUTED);
+        }
+    }
+
+    private String switchesFor(AppNode node) {
+        Map<String, AppNode> byKey = nodeByKey();
+        StringBuilder sb = new StringBuilder();
+        int count = 0;
+        for (AppEdge edge : edges) {
+            if (!node.key.equals(edge.fromKey) && !node.key.equals(edge.toKey)) continue;
+            AppNode from = byKey.get(edge.fromKey);
+            AppNode to = byKey.get(edge.toKey);
+            if (from == null || to == null) continue;
+            if (count++ > 0) sb.append(" · ");
+            sb.append(from.name).append(" -> ").append(to.name).append(" ").append(edge.count).append("x");
+            if (count >= 2) break;
+        }
+        return sb.toString();
+    }
+
+    private String subtitle() {
+        long visible = 0;
+        long total = 0;
+        for (TimelineCard card : cards) {
+            if (isIgnored(card)) continue;
+            total += card.durationMs();
+        }
+        for (AppNode node : nodes) visible += node.durationMs;
+        int coverage = total <= 0 ? 0 : Math.round((float) visible / (float) total * 100f);
+        return "About " + coverage + "% of recorded app time is represented by these nodes.";
+    }
+
+    private void drawEmpty(Canvas canvas, String message) {
+        RectF box = new RectF(dp(18), dp(96), getWidth() - dp(18), dp(178));
+        paint.setColor(Colors.CARD_ALT);
+        canvas.drawRoundRect(box, dp(12), dp(12), paint);
+        drawSans(canvas, message, box.left + dp(12), box.top + dp(38), dp(13), Colors.MUTED);
+    }
+
+    private Map<String, AppNode> nodeByKey() {
+        Map<String, AppNode> byKey = new HashMap<>();
+        for (AppNode node : nodes) byKey.put(node.key, node);
+        return byKey;
+    }
+
+    private static Kind edgeKind(Kind from, Kind to) {
+        if (from == Kind.DISTRACTION || to == Kind.DISTRACTION) return Kind.DISTRACTION;
+        if (from == Kind.PERSONAL || to == Kind.PERSONAL) return Kind.PERSONAL;
+        return Kind.WORK;
+    }
+
+    private static Kind appKind(String appName, String categoryName) {
+        String text = (appName + " " + (categoryName == null ? "" : categoryName)).toLowerCase(LocaleSafe.US);
+        if (text.contains("distraction") || text.contains("youtube") || text.contains("reddit")
+                || text.contains("twitter") || text.contains("tiktok") || text.contains("netflix")
+                || text.contains("steam") || text.contains("game") || text.equals("x")) {
+            return Kind.DISTRACTION;
+        }
+        if (text.contains("personal") || text.contains("shopping") || text.contains("maps")
+                || text.contains("messages") || text.contains("photos") || text.contains("music")) {
+            return Kind.PERSONAL;
+        }
+        return Kind.WORK;
+    }
+
+    private static int colorForKind(Kind kind) {
+        if (kind == Kind.DISTRACTION) return Colors.DISTRACTION;
+        if (kind == Kind.PERSONAL) return Colors.PERSONAL;
+        return Colors.WORK;
+    }
+
+    private static int fillForKind(Kind kind) {
+        if (kind == Kind.DISTRACTION) return Color.rgb(255, 220, 207);
+        if (kind == Kind.PERSONAL) return Color.rgb(230, 230, 230);
+        return Color.rgb(238, 243, 255);
+    }
+
+    private static int shadeForApp(String appName, String categoryName) {
+        int base = Colors.colorForCategory(categoryName);
+        int shift = Math.abs((appName == null ? "" : appName).hashCode()) % 32;
+        int r = Math.min(255, Color.red(base) + shift);
+        int g = Math.max(0, Color.green(base) - shift / 2);
+        int b = Math.min(255, Color.blue(base) + shift / 3);
+        return Color.rgb(r, g, b);
+    }
+
+    private static String normalized(String value) {
+        return clean(value, "unknown").toLowerCase(LocaleSafe.US).replace(' ', '-');
+    }
+
+    private static boolean isIgnored(TimelineCard card) {
+        String category = card.category == null ? "" : card.category.toLowerCase(LocaleSafe.US);
+        return category.contains("idle") || category.contains("system");
+    }
+
+    private static String appFromMetadata(String metadata) {
+        if (metadata == null) return null;
+        String marker = "app=";
+        int start = metadata.indexOf(marker);
+        if (start < 0) return null;
+        int end = metadata.indexOf(';', start);
+        String app = end > start ? metadata.substring(start + marker.length(), end) : metadata.substring(start + marker.length());
+        app = app.trim();
+        return app.isEmpty() ? null : app;
+    }
+
+    private static String clean(String value, String fallback) {
+        if (value == null) return fallback;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? fallback : trimmed;
+    }
+
+    private static String initial(String value) {
+        String clean = clean(value, "?");
+        return clean.substring(0, 1).toUpperCase(LocaleSafe.US);
+    }
+
+    private void drawPanel(Canvas c, float x, float y, float w, float h) {
+        paint.setColor(Colors.CARD);
+        c.drawRoundRect(new RectF(x, y, x + w, y + h), dp(16), dp(16), paint);
+    }
+    private int dp(float v) { return (int) (v * getResources().getDisplayMetrics().density + 0.5f); }
+    private void drawSerif(Canvas c, String text, float x, float y, float size, int color) {
+        paint.setTypeface(DayflowType.serif(getContext()));
+        paint.setTextSize(size);
+        paint.setColor(color);
+        c.drawText(text, x, y, paint);
+    }
+    private void drawSans(Canvas c, String text, float x, float y, float size, int color) {
+        paint.setTypeface(DayflowType.sans(getContext(), false));
+        paint.setTextSize(size);
+        paint.setColor(color);
+        c.drawText(text, x, y, paint);
+    }
+    private void drawCentered(Canvas c, String text, float x, float y, float size, int color, boolean bold) {
+        paint.setTypeface(DayflowType.sans(getContext(), bold));
+        paint.setTextSize(size);
+        paint.setColor(color);
+        paint.setTextAlign(Paint.Align.CENTER);
+        c.drawText(text, x, y, paint);
+        paint.setTextAlign(Paint.Align.LEFT);
+    }
+    private String fitText(String text, float width, float size, boolean bold) {
+        paint.setTypeface(DayflowType.sans(getContext(), bold));
+        paint.setTextSize(size);
+        if (paint.measureText(text) <= width) return text;
+        String suffix = "...";
+        int end = text.length();
+        while (end > 1 && paint.measureText(text.substring(0, end) + suffix) > width) end--;
+        return text.substring(0, Math.max(1, end)) + suffix;
+    }
+
+    private enum Kind { WORK, PERSONAL, DISTRACTION }
+
+    private static final class AppNode {
+        final String key;
+        final String name;
+        Kind kind;
+        final int color;
+        long durationMs;
+        int visits;
+        float cx;
+        float cy;
+        float radius;
+        boolean primary;
+        boolean muted;
+        AppNode(String key, String name, Kind kind, int color) {
+            this.key = key;
+            this.name = name;
+            this.kind = kind;
+            this.color = color;
+        }
+    }
+
+    private static final class AppEdge {
+        final String fromKey;
+        final String toKey;
+        int count;
+        AppEdge(String fromKey, String toKey) {
+            this.fromKey = fromKey;
+            this.toKey = toKey;
+        }
     }
 }
 
