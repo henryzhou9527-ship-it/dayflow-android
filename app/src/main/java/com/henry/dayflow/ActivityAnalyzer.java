@@ -53,7 +53,16 @@ final class HybridActivityAnalyzer implements ActivityAnalyzer {
         String backup = prefs.backupProvider();
         if (!sameProvider(primary, backup)) {
             try {
-                return analyzeLogged(backup, "timeline_analysis_backup", batchId, screenshots, existingCards);
+                List<TimelineCard> cards = analyzeLogged(backup, "timeline_analysis_backup", batchId, screenshots, existingCards);
+                saveAnalysisNotice(
+                        "warning",
+                        "Primary analysis failed, so Dayflow used the backup provider for this batch.",
+                        "timeline_analysis_backup",
+                        resolvedProvider(primary),
+                        resolvedProvider(backup),
+                        batchId,
+                        firstError);
+                return cards;
             } catch (Exception backupError) {
                 if (firstError == null) firstError = backupError;
             }
@@ -76,6 +85,16 @@ final class HybridActivityAnalyzer implements ActivityAnalyzer {
                 cards,
                 System.currentTimeMillis() - startedAt,
                 firstError);
+        if (firstError != null) {
+            saveAnalysisNotice(
+                    "warning",
+                    "AI analysis failed, so Dayflow used local fallback for this batch.",
+                    "timeline_analysis_fallback",
+                    resolvedProvider(primary),
+                    resolvedProvider(backup),
+                    batchId,
+                    firstError);
+        }
         return cards;
     }
 
@@ -117,6 +136,13 @@ final class HybridActivityAnalyzer implements ActivityAnalyzer {
         log.requestSummary = screenshots == null || screenshots.isEmpty() ? "" : AnalyzerPromptContext.metadataFor(screenshots);
         log.responseSummary = cardsSummary(cards);
         db.saveLlmCall(log);
+    }
+
+    private void saveAnalysisNotice(String severity, String message, String operation, String provider, String backupProvider, long batchId, Exception error) {
+        String detail = error == null || error.getMessage() == null || error.getMessage().trim().isEmpty()
+                ? message
+                : message + " " + error.getClass().getSimpleName() + ": " + shortText(error.getMessage(), 140);
+        prefs.saveAnalysisNotice(severity, detail, operation, provider, backupProvider, batchId);
     }
 
     private String resolvedProvider(String providerName) {

@@ -203,6 +203,7 @@ public final class MainActivity extends Activity {
             renderOnboarding();
             return;
         }
+        addAnalysisNoticeIfNeeded();
         if ("Timeline".equals(selectedTab)) renderTimeline(dayCards, metrics);
         if ("Daily".equals(selectedTab)) renderDaily(dayCards);
         if ("Weekly".equals(selectedTab)) renderWeekly();
@@ -211,6 +212,49 @@ public final class MainActivity extends Activity {
         if ("Chat".equals(selectedTab)) renderChat(metrics);
         if ("Categories".equals(selectedTab)) renderCategories();
         if ("Settings".equals(selectedTab)) renderSettings();
+    }
+
+    private void addAnalysisNoticeIfNeeded() {
+        final AnalysisNotice notice = prefs.analysisNotice();
+        if (!notice.shouldShow()) return;
+
+        LinearLayout panel = panel();
+        GradientDrawable bg = new GradientDrawable();
+        boolean error = "error".equalsIgnoreCase(notice.severity);
+        bg.setColor(error ? Color.rgb(255, 245, 242) : Color.rgb(255, 250, 235));
+        bg.setStroke(1, error ? Color.rgb(255, 150, 130) : Color.rgb(241, 183, 81));
+        bg.setCornerRadius(dp(8));
+        panel.setBackground(bg);
+        panel.addView(text(error ? "Analysis needs attention" : "Analysis used fallback", 13, error ? Colors.DISTRACTION : Colors.ACCENT, true));
+        panel.addView(text(notice.message, 14, Colors.TEXT, false));
+        String meta = TimeUtil.timeLabel(notice.createdAtMs)
+                + (notice.batchId > 0 ? " · batch " + notice.batchId : "")
+                + (notice.provider == null || notice.provider.trim().isEmpty() ? "" : " · " + notice.provider)
+                + (notice.backupProvider == null || notice.backupProvider.trim().isEmpty() ? "" : " -> " + notice.backupProvider);
+        panel.addView(text(meta, 12, Colors.MUTED, false));
+
+        LinearLayout actions = row();
+        Button details = pillButton("Open diagnostics");
+        details.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.setSettingsSection("Other");
+                selectedTab = "Settings";
+                refresh();
+            }
+        });
+        Button dismiss = smallButton("Dismiss");
+        dismiss.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.dismissAnalysisNotice();
+                setStatus("Analysis notice dismissed.");
+                refresh();
+            }
+        });
+        actions.addView(details, new LinearLayout.LayoutParams(0, dp(42), 1));
+        actions.addView(dismiss, new LinearLayout.LayoutParams(dp(104), dp(42)));
+        panel.addView(actions);
+        content.addView(panel);
+        addGap(8);
     }
 
     private void renderOnboarding() {

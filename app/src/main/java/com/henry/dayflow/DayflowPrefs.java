@@ -125,6 +125,19 @@ final class DayflowPrefs {
         return (journalWeekdayMask() & (1 << Math.max(1, Math.min(7, calendarWeekday)))) != 0;
     }
 
+    AnalysisNotice analysisNotice() {
+        AnalysisNotice notice = new AnalysisNotice();
+        notice.createdAtMs = prefs.getLong("analysis_notice_created_at", 0L);
+        notice.dismissedAtMs = prefs.getLong("analysis_notice_dismissed_at", 0L);
+        notice.batchId = prefs.getLong("analysis_notice_batch_id", 0L);
+        notice.severity = prefs.getString("analysis_notice_severity", "");
+        notice.message = prefs.getString("analysis_notice_message", "");
+        notice.operation = prefs.getString("analysis_notice_operation", "");
+        notice.provider = prefs.getString("analysis_notice_provider", "");
+        notice.backupProvider = prefs.getString("analysis_notice_backup_provider", "");
+        return notice;
+    }
+
     boolean didOnboard() {
         return prefs.getBoolean("did_onboard", false);
     }
@@ -271,6 +284,22 @@ final class DayflowPrefs {
         if (enabled) mask |= 1 << day;
         else mask &= ~(1 << day);
         prefs.edit().putInt("journal_weekday_mask", mask).apply();
+    }
+
+    void saveAnalysisNotice(String severity, String message, String operation, String provider, String backupProvider, long batchId) {
+        prefs.edit()
+                .putLong("analysis_notice_created_at", System.currentTimeMillis())
+                .putLong("analysis_notice_batch_id", Math.max(0L, batchId))
+                .putString("analysis_notice_severity", severity == null ? "warning" : severity.trim())
+                .putString("analysis_notice_message", message == null ? "" : message.trim())
+                .putString("analysis_notice_operation", operation == null ? "" : operation.trim())
+                .putString("analysis_notice_provider", provider == null ? "" : provider.trim())
+                .putString("analysis_notice_backup_provider", backupProvider == null ? "" : backupProvider.trim())
+                .apply();
+    }
+
+    void dismissAnalysisNotice() {
+        prefs.edit().putLong("analysis_notice_dismissed_at", System.currentTimeMillis()).apply();
     }
 
     void setDidOnboard(boolean value) {

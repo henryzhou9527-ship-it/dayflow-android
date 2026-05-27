@@ -46,6 +46,7 @@ final class AnalysisEngine {
         if (screenshots.isEmpty()) {
             db.updateBatch(batchId, "failed_empty", "No screenshots");
             logEngineEvent(batchId, "batch_gate", "failed_empty", screenshots, 0, "No screenshots");
+            prefs.saveAnalysisNotice("error", "Analysis could not start because this batch has no screenshots.", "batch_gate", "Engine", prefs.backupProvider(), batchId);
             return;
         }
 
@@ -85,7 +86,22 @@ final class AnalysisEngine {
             pregenerateTimelapsesIfNeeded(startMs, endMs);
             db.updateBatch(batchId, "failed", error.getMessage());
             logEngineEvent(batchId, "timeline_commit", "failure", screenshots, cards.size(), error.getClass().getSimpleName() + ": " + error.getMessage());
+            prefs.saveAnalysisNotice(
+                    "error",
+                    "Analysis failed for this batch. " + error.getClass().getSimpleName() + ": " + shortText(error.getMessage(), 140),
+                    "timeline_commit",
+                    prefs.provider(),
+                    prefs.backupProvider(),
+                    batchId);
         }
+    }
+
+    private static String shortText(String value, int max) {
+        if (value == null) return "";
+        String clean = value.replace('\n', ' ').replace('\r', ' ').trim();
+        while (clean.contains("  ")) clean = clean.replace("  ", " ");
+        if (clean.length() <= max) return clean;
+        return clean.substring(0, Math.max(1, max - 3)).trim() + "...";
     }
 
     private void logEngineEvent(long batchId, String operation, String status, List<ScreenshotRecord> screenshots, int cardCount, String message) {
