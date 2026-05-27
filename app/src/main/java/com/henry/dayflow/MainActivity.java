@@ -409,25 +409,56 @@ public final class MainActivity extends Activity {
     private void renderChat(DashboardMetrics metrics) {
         LinearLayout panel = panel();
         panel.addView(serif("Chat with your work journal", 28, Colors.TEXT));
-        panel.addView(text("Ask about today, distractions, focus blocks, or where the time went.", 14, Colors.MUTED, false));
-        final EditText question = new EditText(this);
-        question.setSingleLine(false);
-        question.setMinLines(2);
-        question.setTextColor(Colors.TEXT);
-        question.setHintTextColor(Colors.MUTED);
-        question.setHint("Where did my time go today?");
+        panel.addView(text("Ask about today, distractions, focus blocks, or where the time went. Dayflow will use your selected provider when available.", 14, Colors.MUTED, false));
+        final EditText question = field("Where did my time go today?", "", false);
         panel.addView(question, new LinearLayout.LayoutParams(-1, dp(94)));
 
-        final TextView answer = text(answerFor("summary", metrics), 14, Colors.TEXT, false);
+        LinearLayout actions = row();
         Button ask = pillButton("Ask");
         ask.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                answer.setText(answerFor(question.getText().toString(), db.dashboardForDay(selectedDay)));
+                final String value = question.getText().toString().trim();
+                if (value.isEmpty()) return;
+                final String chatDay = selectedDay;
+                db.saveChatMessage("user", value);
+                setStatus("Thinking...");
+                refresh();
+                new Thread(new Runnable() {
+                    @Override public void run() {
+                        final String answer = new ChatResponder(MainActivity.this).answer(chatDay, value);
+                        runOnUiThread(new Runnable() {
+                            @Override public void run() {
+                                db.saveChatMessage("assistant", answer);
+                                setStatus("Chat answered.");
+                                refresh();
+                            }
+                        });
+                    }
+                }, "dayflow-chat").start();
             }
         });
-        panel.addView(ask, new LinearLayout.LayoutParams(-1, dp(44)));
-        panel.addView(answer);
+        Button clear = smallButton("Clear");
+        clear.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                db.clearChatMessages();
+                setStatus("Chat cleared.");
+                refresh();
+            }
+        });
+        actions.addView(ask, new LinearLayout.LayoutParams(0, dp(44), 1));
+        actions.addView(clear, new LinearLayout.LayoutParams(dp(92), dp(44)));
+        panel.addView(actions);
         content.addView(panel);
+
+        List<DayflowChatMessage> messages = db.fetchChatMessages(40);
+        if (messages.isEmpty()) {
+            LinearLayout welcome = panel();
+            welcome.addView(serif("Try asking", 24, Colors.TEXT));
+            welcome.addView(text("What should I mention in standup?\nWhere did my focused time go?\nWhat distracted me most today?", 14, Colors.TEXT, false));
+            content.addView(welcome);
+            return;
+        }
+        for (DayflowChatMessage message : messages) content.addView(chatMessageView(message));
     }
 
     private void renderSettings() {
@@ -630,6 +661,14 @@ public final class MainActivity extends Activity {
             content.addView(p);
             addGap(10);
         }
+    }
+
+    private LinearLayout chatMessageView(DayflowChatMessage message) {
+        LinearLayout p = panel();
+        boolean user = "user".equals(message.role);
+        p.addView(text(user ? "YOU" : "DAYFLOW", 12, user ? Colors.ACCENT : Colors.MUTED, true));
+        p.addView(text(message.content, 14, Colors.TEXT, false));
+        return p;
     }
 
     private Button ratingButton(final TimelineCard card, final String rating) {

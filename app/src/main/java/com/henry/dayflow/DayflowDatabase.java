@@ -17,7 +17,7 @@ import java.util.Map;
 
 final class DayflowDatabase extends SQLiteOpenHelper {
     private static final String DB_NAME = "dayflow.sqlite";
-    private static final int DB_VERSION = 2;
+    private static final int DB_VERSION = 3;
 
     DayflowDatabase(Context context) {
         super(context.getApplicationContext(), DB_NAME, null, DB_VERSION);
@@ -35,6 +35,9 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         if (oldVersion < 2) {
             createFeatureTables(db);
             seedDefaultCategories(db);
+        }
+        if (oldVersion < 3) {
+            createFeatureTables(db);
         }
     }
 
@@ -139,6 +142,13 @@ final class DayflowDatabase extends SQLiteOpenHelper {
                 "app_label TEXT," +
                 "is_blocked INTEGER NOT NULL DEFAULT 1," +
                 "updated_at INTEGER NOT NULL)");
+
+        db.execSQL("CREATE TABLE IF NOT EXISTS chat_messages (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "role TEXT NOT NULL," +
+                "content TEXT NOT NULL," +
+                "created_at INTEGER NOT NULL)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_chat_messages_created ON chat_messages(created_at)");
     }
 
     private void seedDefaultCategories(SQLiteDatabase db) {
@@ -382,6 +392,40 @@ final class DayflowDatabase extends SQLiteOpenHelper {
                     .append("\n");
         }
         return sb.toString();
+    }
+
+    synchronized List<DayflowChatMessage> fetchChatMessages(int limit) {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT * FROM chat_messages ORDER BY created_at DESC LIMIT ?",
+                new String[]{String.valueOf(Math.max(1, limit))});
+        try {
+            List<DayflowChatMessage> reverse = new ArrayList<>();
+            while (c.moveToNext()) {
+                DayflowChatMessage message = new DayflowChatMessage();
+                message.id = c.getLong(c.getColumnIndexOrThrow("id"));
+                message.role = c.getString(c.getColumnIndexOrThrow("role"));
+                message.content = c.getString(c.getColumnIndexOrThrow("content"));
+                message.createdAtMs = c.getLong(c.getColumnIndexOrThrow("created_at"));
+                reverse.add(message);
+            }
+            Collections.reverse(reverse);
+            return reverse;
+        } finally {
+            c.close();
+        }
+    }
+
+    synchronized void saveChatMessage(String role, String content) {
+        if (content == null || content.trim().isEmpty()) return;
+        ContentValues values = new ContentValues();
+        values.put("role", role == null ? "assistant" : role);
+        values.put("content", content.trim());
+        values.put("created_at", System.currentTimeMillis());
+        getWritableDatabase().insert("chat_messages", null, values);
+    }
+
+    synchronized void clearChatMessages() {
+        getWritableDatabase().delete("chat_messages", null, null);
     }
 
     synchronized List<Category> fetchCategories() {
