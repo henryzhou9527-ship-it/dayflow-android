@@ -25,6 +25,7 @@ final class AnalysisEngine {
             long batchId = db.saveBatch(batch.startMs, batch.endMs, batch.screenshots);
             if (batchId > 0) analyzeBatch(batchId);
         }
+        ReadyNotificationCenter.checkAfterAnalysis(context);
     }
 
     int reprocessDay(String day) {
@@ -38,6 +39,7 @@ final class AnalysisEngine {
             db.resetBatchForReprocess(batchId);
             analyzeBatch(batchId);
         }
+        ReadyNotificationCenter.checkAfterAnalysis(context);
         return batchIds.size();
     }
 

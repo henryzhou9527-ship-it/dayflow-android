@@ -166,6 +166,14 @@ final class DayflowPrefs {
         return prefs.getBoolean("daily_unlocked", false);
     }
 
+    String dailyReadyNotifiedDay() {
+        return prefs.getString("daily_ready_notified_day", "");
+    }
+
+    long weeklyReadyNotifiedWeekStartMs() {
+        return prefs.getLong("weekly_ready_notified_week_start_ms", 0L);
+    }
+
     int onboardingStep() {
         return Math.max(0, Math.min(7, prefs.getInt("onboarding_step", 0)));
     }
@@ -391,6 +399,14 @@ final class DayflowPrefs {
 
     void setDailyUnlocked(boolean value) {
         prefs.edit().putBoolean("daily_unlocked", value).apply();
+    }
+
+    void setDailyReadyNotifiedDay(String day) {
+        prefs.edit().putString("daily_ready_notified_day", day == null ? "" : day.trim()).apply();
+    }
+
+    void setWeeklyReadyNotifiedWeekStartMs(long weekStartMs) {
+        prefs.edit().putLong("weekly_ready_notified_week_start_ms", Math.max(0L, weekStartMs)).apply();
     }
 
     void setOnboardingStep(int step) {

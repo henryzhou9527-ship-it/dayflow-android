@@ -55,6 +55,12 @@ import java.util.Locale;
 import java.util.Map;
 
 public final class MainActivity extends Activity {
+    static final String EXTRA_OPEN_TAB = "com.henry.dayflow.OPEN_TAB";
+    static final String EXTRA_OPEN_DAY = "com.henry.dayflow.OPEN_DAY";
+    static final String EXTRA_OPEN_WEEK_START = "com.henry.dayflow.OPEN_WEEK_START";
+    static final String TAB_DAILY = "Daily";
+    static final String TAB_WEEKLY = "Weekly";
+
     private static final int REQ_MEDIA_PROJECTION = 1001;
     private static final int REQ_NOTIFICATIONS = 1002;
     private static final int REQ_EXPORT_MARKDOWN = 1003;
@@ -85,8 +91,17 @@ public final class MainActivity extends Activity {
         selectedDay = TimeUtil.dayKey(System.currentTimeMillis());
         selectedWeekStartMs = TimeUtil.weekStartMs(System.currentTimeMillis());
         if (!prefs.didOnboard()) selectedTab = "Onboarding";
+        applyLaunchIntent(getIntent());
         maybeRequestNotifications();
         buildUi();
+        refresh();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        applyLaunchIntent(intent);
         refresh();
     }
 
@@ -191,6 +206,21 @@ public final class MainActivity extends Activity {
         shell.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
         setContentView(root);
+    }
+
+    private void applyLaunchIntent(Intent intent) {
+        if (intent == null) return;
+        String tab = intent.getStringExtra(EXTRA_OPEN_TAB);
+        if (TAB_DAILY.equals(tab) || TAB_WEEKLY.equals(tab)) {
+            selectedTab = tab;
+            prefs.setDidOnboard(true);
+        }
+        String day = intent.getStringExtra(EXTRA_OPEN_DAY);
+        if (day != null && !day.trim().isEmpty()) selectedDay = normalizedDay(day, selectedDay);
+        long weekStart = intent.getLongExtra(EXTRA_OPEN_WEEK_START, 0L);
+        if (weekStart > 0) selectedWeekStartMs = weekStart;
+        else selectedWeekStartMs = TimeUtil.weekStartMs(TimeUtil.dayStartMs(selectedDay) + TimeUtil.HOUR);
+        if (TAB_DAILY.equals(tab)) prefs.setDailyUnlocked(true);
     }
 
     private void refresh() {
