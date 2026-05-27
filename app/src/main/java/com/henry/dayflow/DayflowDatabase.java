@@ -20,7 +20,7 @@ import java.util.Map;
 
 final class DayflowDatabase extends SQLiteOpenHelper {
     private static final String DB_NAME = "dayflow.sqlite";
-    private static final int DB_VERSION = 6;
+    private static final int DB_VERSION = 7;
 
     private final Context appContext;
 
@@ -52,6 +52,9 @@ final class DayflowDatabase extends SQLiteOpenHelper {
             addColumnIfMissing(db, "timeline_cards", "video_summary_path", "TEXT");
         }
         if (oldVersion < 6) {
+            createFeatureTables(db);
+        }
+        if (oldVersion >= 6 && oldVersion < 7) {
             createFeatureTables(db);
         }
     }
@@ -161,6 +164,14 @@ final class DayflowDatabase extends SQLiteOpenHelper {
                 "rating TEXT NOT NULL," +
                 "created_at INTEGER NOT NULL)");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_review_ratings_time ON timeline_review_ratings(start_ts, end_ts)");
+
+        db.execSQL("CREATE TABLE IF NOT EXISTS timeline_summary_feedback (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "card_id INTEGER NOT NULL," +
+                "direction TEXT NOT NULL," +
+                "message TEXT," +
+                "created_at INTEGER NOT NULL)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_summary_feedback_card ON timeline_summary_feedback(card_id, created_at)");
 
         db.execSQL("CREATE TABLE IF NOT EXISTS blocked_apps (" +
                 "package_name TEXT PRIMARY KEY," +
@@ -527,6 +538,10 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         return markdownForDay(day, fetchTimelineCards(day));
     }
 
+    synchronized String timelineClipboardText(String day) {
+        return clipboardTextForDay(day, fetchTimelineCards(day));
+    }
+
     synchronized String exportMarkdownRange(String fromDay, String toDay) {
         StringBuilder sb = new StringBuilder();
         String start = minDay(fromDay, toDay);
@@ -539,6 +554,29 @@ final class DayflowDatabase extends SQLiteOpenHelper {
             cursor = nextDay(cursor);
         }
         return sb.toString();
+    }
+
+    synchronized void saveTimelineSummaryFeedback(long cardId, String direction, String message) {
+        if (cardId <= 0) return;
+        String normalized = normalizeFeedbackDirection(direction);
+        SQLiteDatabase db = getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put("card_id", cardId);
+        values.put("direction", normalized);
+        values.put("message", message == null ? "" : message.trim());
+        values.put("created_at", System.currentTimeMillis());
+        db.insert("timeline_summary_feedback", null, values);
+    }
+
+    synchronized String latestTimelineSummaryFeedback(long cardId) {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT direction FROM timeline_summary_feedback WHERE card_id = ? ORDER BY created_at DESC LIMIT 1",
+                new String[]{String.valueOf(cardId)});
+        try {
+            return c.moveToFirst() ? c.getString(0) : null;
+        } finally {
+            c.close();
+        }
     }
 
     synchronized List<DayflowChatMessage> fetchChatMessages(int limit) {
@@ -1151,9 +1189,59 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         return sb.toString().trim();
     }
 
+    private static String clipboardTextForDay(String day, List<TimelineCard> cards) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Dayflow timeline - ").append(day).append("\n\n");
+        if (cards.isEmpty()) {
+            sb.append("No timeline activities were recorded for this day.");
+            return sb.toString();
+        }
+        int index = 1;
+        for (TimelineCard card : cards) {
+            sb.append(index++)
+                    .append(". ")
+                    .append(TimeUtil.timeLabel(card.startMs))
+                    .append(" - ")
+                    .append(TimeUtil.timeLabel(card.endMs))
+                    .append(" - ")
+                    .append(clean(card.title))
+                    .append("\n");
+            if (card.category != null && !card.category.trim().isEmpty()) {
+                sb.append("   ").append(clean(card.category)).append("\n");
+            }
+            appendClipboardBlock(sb, "Summary", card.summary);
+            if (card.detailedSummary != null
+                    && !card.detailedSummary.trim().isEmpty()
+                    && !card.detailedSummary.trim().equals(card.summary == null ? "" : card.summary.trim())) {
+                appendClipboardBlock(sb, "Details", card.detailedSummary);
+            }
+            sb.append("\n");
+        }
+        return sb.toString().trim();
+    }
+
+    private static void appendClipboardBlock(StringBuilder sb, String label, String value) {
+        if (value == null || value.trim().isEmpty()) return;
+        String[] lines = value.trim().replace("\r\n", "\n").replace('\r', '\n').split("\n");
+        if (lines.length == 1) {
+            sb.append("   ").append(label).append(": ").append(lines[0].trim()).append("\n");
+            return;
+        }
+        sb.append("   ").append(label).append(":\n");
+        for (String line : lines) {
+            String clean = line.trim();
+            if (!clean.isEmpty()) sb.append("      ").append(clean).append("\n");
+        }
+    }
+
     private static String clean(String value) {
         if (value == null) return "";
         return value.trim().replace("\r", "").replace("\n", "\n      ");
+    }
+
+    private static String normalizeFeedbackDirection(String direction) {
+        String normalized = direction == null ? "" : direction.trim().toLowerCase(Locale.US);
+        return normalized.contains("down") || normalized.contains("off") ? "down" : "up";
     }
 
     private static String minDay(String left, String right) {

@@ -526,6 +526,9 @@ public final class MainActivity extends Activity {
         actions.addView(next, new LinearLayout.LayoutParams(dp(44), dp(38)));
         content.addView(actions);
 
+        content.addView(timelineQuickActions(), new LinearLayout.LayoutParams(-1, dp(44)));
+        addGap(8);
+
         DashboardCanvasView dashboard = new DashboardCanvasView(this);
         dashboard.setMetrics(metrics);
         content.addView(dashboard, new LinearLayout.LayoutParams(-1, dp(530)));
@@ -2817,6 +2820,25 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private LinearLayout timelineQuickActions() {
+        LinearLayout actions = row();
+        Button copy = smallButton("Copy timeline");
+        copy.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                copyText("Dayflow timeline", db.timelineClipboardText(selectedDay));
+            }
+        });
+        Button export = smallButton("Export day");
+        export.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                startMarkdownExport(selectedDay, selectedDay);
+            }
+        });
+        actions.addView(copy, new LinearLayout.LayoutParams(0, dp(38), 1));
+        actions.addView(export, new LinearLayout.LayoutParams(0, dp(38), 1));
+        return actions;
+    }
+
     private void renderCardList(List<TimelineCard> cards) {
         for (final TimelineCard card : cards) {
             content.addView(timelineActivityCard(card));
@@ -3051,6 +3073,7 @@ public final class MainActivity extends Activity {
     }
 
     private LinearLayout timelineSummaryFeedback(final TimelineCard card) {
+        String selected = db.latestTimelineSummaryFeedback(card.id);
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
@@ -3074,13 +3097,19 @@ public final class MainActivity extends Activity {
         label.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         bar.addView(label, new LinearLayout.LayoutParams(0, dp(32), 1));
 
-        Button up = smallButton("Good");
+        Button up = "up".equals(selected) ? pillButton("Good") : smallButton("Good");
         up.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { setStatus("Summary feedback saved."); }
+            @Override public void onClick(View view) {
+                db.saveTimelineSummaryFeedback(card.id, "up", "");
+                setStatus("Summary feedback saved.");
+                refresh();
+            }
         });
-        Button down = smallButton("Off");
+        Button down = "down".equals(selected) ? pillButton("Off") : smallButton("Off");
         down.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { setStatus("Summary feedback saved. You can reprocess this day from Settings."); }
+            @Override public void onClick(View view) {
+                showSummaryFeedbackDialog(card);
+            }
         });
         bar.addView(up, new LinearLayout.LayoutParams(dp(72), dp(32)));
         bar.addView(down, new LinearLayout.LayoutParams(dp(66), dp(32)));
@@ -3088,6 +3117,29 @@ public final class MainActivity extends Activity {
         lp.setMargins(0, dp(12), 0, dp(8));
         bar.setLayoutParams(lp);
         return bar;
+    }
+
+    private void showSummaryFeedbackDialog(final TimelineCard card) {
+        final EditText message = field("What felt off about this summary?", "", false);
+        new AlertDialog.Builder(this)
+                .setTitle("Tell Dayflow what was off")
+                .setMessage(TimeUtil.timeLabel(card.startMs) + " - " + TimeUtil.timeLabel(card.endMs) + "\n" + card.title)
+                .setView(message)
+                .setPositiveButton("Save", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        db.saveTimelineSummaryFeedback(card.id, "down", message.getText().toString());
+                        setStatus("Summary feedback saved. You can reprocess this day from Settings.");
+                        refresh();
+                    }
+                })
+                .setNegativeButton("Skip note", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) {
+                        db.saveTimelineSummaryFeedback(card.id, "down", "");
+                        setStatus("Summary feedback saved.");
+                        refresh();
+                    }
+                })
+                .show();
     }
 
     private LinearLayout chatMessageView(final DayflowChatMessage message) {
