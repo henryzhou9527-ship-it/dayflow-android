@@ -8,6 +8,7 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.media.MediaPlayer;
 import android.graphics.Bitmap;
@@ -53,6 +54,7 @@ public final class MainActivity extends Activity {
     private static final int REQ_MEDIA_PROJECTION = 1001;
     private static final int REQ_NOTIFICATIONS = 1002;
     private static final int REQ_EXPORT_MARKDOWN = 1003;
+    private static final int DAILY_REQUIRED_BATCHES = 20;
 
     private DayflowDatabase db;
     private DayflowPrefs prefs;
@@ -523,6 +525,10 @@ public final class MainActivity extends Activity {
     }
 
     private void renderDaily(List<TimelineCard> cards) {
+        if (!prefs.dailyUnlocked()) {
+            renderDailyAccess();
+            return;
+        }
         DashboardMetrics metrics = metricsFor(cards);
         renderDailyGoals(metrics);
         renderDailyFocusSummary(cards, metrics);
@@ -536,6 +542,109 @@ public final class MainActivity extends Activity {
         renderDailyStandup(cards);
         addGap(14);
         renderCardList(cards);
+    }
+
+    private void renderDailyAccess() {
+        int analyzed = db.countAnalyzedBatches();
+        int capped = Math.min(DAILY_REQUIRED_BATCHES, Math.max(0, analyzed));
+        boolean ready = analyzed >= DAILY_REQUIRED_BATCHES;
+        float progress = capped / (float) DAILY_REQUIRED_BATCHES;
+
+        LinearLayout panel = panel();
+        panel.setGravity(Gravity.CENTER_HORIZONTAL);
+        DayflowLogoView logo = new DayflowLogoView(this);
+        panel.addView(logo, new LinearLayout.LayoutParams(dp(64), dp(64)));
+        panel.addView(serif("Dayflow Daily", 34, Colors.TEXT));
+        panel.addView(text("BETA", 12, Colors.ACCENT, true));
+        panel.addView(text("Daily is a new way to visualize your day and turn it into a standup update fast.", 15, Colors.TEXT, false));
+        panel.addView(text("Daily unlocks after 5 hours of analyzed timeline data. " + dailyProgressText(analyzed), 13, Colors.MUTED, false));
+        panel.addView(progressBar(Colors.ACCENT, progress), new LinearLayout.LayoutParams(-1, dp(14)));
+
+        addAssetImage(panel, "images/dayflow_content_area.png", 170);
+
+        LinearLayout checks = new LinearLayout(this);
+        checks.setOrientation(LinearLayout.VERTICAL);
+        checks.setPadding(0, dp(8), 0, dp(8));
+        checks.addView(text("READINESS", 12, Colors.MUTED, true));
+        checks.addView(text("Usage Access: " + (appReader.hasUsageAccess() ? "enabled" : "needed")
+                + "\nScreen capture: start when you are ready"
+                + "\nNotifications: " + (hasNotificationPermission() ? "enabled" : "needed")
+                + "\nDaily provider: " + prefs.provider(), 14, Colors.TEXT, false));
+        panel.addView(checks);
+
+        LinearLayout providerRow = row();
+        Button heuristic = smallButton("Heuristic");
+        heuristic.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.setProvider("Heuristic");
+                setStatus("Daily provider set to local heuristic.");
+                refresh();
+            }
+        });
+        Button gemini = smallButton("Gemini");
+        gemini.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.setProvider("Gemini");
+                setStatus("Daily provider set to Gemini.");
+                refresh();
+            }
+        });
+        Button ollama = smallButton("Ollama");
+        ollama.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.setProvider("Ollama");
+                setStatus("Daily provider set to Ollama.");
+                refresh();
+            }
+        });
+        providerRow.addView(heuristic, new LinearLayout.LayoutParams(0, dp(40), 1));
+        providerRow.addView(gemini, new LinearLayout.LayoutParams(0, dp(40), 1));
+        providerRow.addView(ollama, new LinearLayout.LayoutParams(0, dp(40), 1));
+        panel.addView(providerRow);
+
+        LinearLayout actions = row();
+        Button usage = smallButton(appReader.hasUsageAccess() ? "Usage ready" : "Usage Access");
+        usage.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { startActivity(appReader.usageAccessIntent()); }
+        });
+        Button capture = smallButton("Start capture");
+        capture.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { requestScreenCapture(); }
+        });
+        Button analyze = smallButton("Analyze now");
+        analyze.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                setStatus("Analyzing recent batches...");
+                new Thread(new Runnable() {
+                    @Override public void run() {
+                        new AnalysisEngine(MainActivity.this).processNow();
+                        runOnUiThread(new Runnable() {
+                            @Override public void run() {
+                                setStatus("Analysis complete.");
+                                refresh();
+                            }
+                        });
+                    }
+                }, "dayflow-daily-access-analysis").start();
+            }
+        });
+        actions.addView(usage, new LinearLayout.LayoutParams(0, dp(42), 1));
+        actions.addView(capture, new LinearLayout.LayoutParams(0, dp(42), 1));
+        actions.addView(analyze, new LinearLayout.LayoutParams(0, dp(42), 1));
+        panel.addView(actions);
+
+        Button unlock = ready ? pillButton("Continue to Daily") : smallButton("Need " + (DAILY_REQUIRED_BATCHES - capped) + " more batches");
+        unlock.setEnabled(ready);
+        unlock.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                prefs.setDailyUnlocked(true);
+                setStatus("Daily unlocked.");
+                refresh();
+            }
+        });
+        panel.addView(unlock, new LinearLayout.LayoutParams(-1, dp(46)));
+
+        content.addView(panel);
     }
 
     private void renderDailyGoals(DashboardMetrics metrics) {
@@ -575,6 +684,23 @@ public final class MainActivity extends Activity {
         actions.addView(skip, new LinearLayout.LayoutParams(dp(104), dp(44)));
         panel.addView(actions);
         content.addView(panel);
+    }
+
+    private String dailyProgressText(int analyzedBatches) {
+        int minutes = Math.min(DAILY_REQUIRED_BATCHES, Math.max(0, analyzedBatches)) * 15;
+        int hours = minutes / 60;
+        int remaining = minutes % 60;
+        String done;
+        if (minutes == 0) done = "0h";
+        else if (remaining == 0) done = hours + "h";
+        else if (hours == 0) done = remaining + "m";
+        else done = hours + "h " + remaining + "m";
+        return done + " / 5h";
+    }
+
+    private boolean hasNotificationPermission() {
+        return Build.VERSION.SDK_INT < 33
+                || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
     }
 
     private void showDayGoalFlow(final DayGoal current, DashboardMetrics todayMetrics) {

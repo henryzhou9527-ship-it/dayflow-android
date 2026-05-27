@@ -16,6 +16,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Other settings include app preference toggles and an output-language override that is passed into timeline analysis and chat prompts.
 - Adds first-run onboarding, journal entries, daily goals, review ratings, editable categories, storage stats, per-app privacy blocking, day deletion, and reprocessing controls.
 - Daily goals include a native review/setup flow with yesterday's goal review, last-week averages, focus/distraction category assignment, skip, and persistence.
+- Daily includes the original-style data readiness gate: 5 hours of analyzed 15-minute batches, progress text, permission/recording/analyze actions, provider selection, and persisted unlock.
 - Timeline and review cards support manual category reassignment and single-card deletion, matching the original Dayflow correction workflow.
 - Timeline and review cards can generate, save, regenerate, and play MP4 timelapse summaries from the card's captured screenshots.
 - Daily view surfaces day-goal progress, focus summaries, distraction summaries, an original-style touch workflow grid with dynamic time windows, totals, stats, distraction markers, and editable Dayflow-style standup cards for highlights, tasks, and blockers.

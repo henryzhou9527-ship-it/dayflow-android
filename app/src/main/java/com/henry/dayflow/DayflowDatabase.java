@@ -266,6 +266,17 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         getWritableDatabase().update("analysis_batches", values, "id = ?", new String[]{String.valueOf(batchId)});
     }
 
+    synchronized int countAnalyzedBatches() {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT COUNT(*) FROM analysis_batches WHERE status = 'analyzed'",
+                null);
+        try {
+            return c.moveToFirst() ? c.getInt(0) : 0;
+        } finally {
+            c.close();
+        }
+    }
+
     synchronized long[] batchWindow(long batchId) {
         Cursor c = getReadableDatabase().rawQuery(
                 "SELECT batch_start_ts, batch_end_ts FROM analysis_batches WHERE id = ?",

@@ -125,6 +125,10 @@ final class DayflowPrefs {
         return prefs.getBoolean("did_onboard", false);
     }
 
+    boolean dailyUnlocked() {
+        return prefs.getBoolean("daily_unlocked", false);
+    }
+
     int onboardingStep() {
         return Math.max(0, Math.min(7, prefs.getInt("onboarding_step", 0)));
     }
@@ -266,6 +270,10 @@ final class DayflowPrefs {
                 .putBoolean("did_onboard", value)
                 .putInt("onboarding_step", value ? 0 : onboardingStep())
                 .apply();
+    }
+
+    void setDailyUnlocked(boolean value) {
+        prefs.edit().putBoolean("daily_unlocked", value).apply();
     }
 
     void setOnboardingStep(int step) {
