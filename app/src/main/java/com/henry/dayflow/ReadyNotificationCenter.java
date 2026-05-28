@@ -14,8 +14,8 @@ import java.util.List;
 
 final class ReadyNotificationCenter {
     private static final String CHANNEL_ID = "dayflow_ready";
-    private static final int DAILY_REQUIRED_BATCHES = 20;
-    private static final int WEEKLY_REQUIRED_BATCHES = 120;
+    private static final long DAILY_REQUIRED_MS = 5 * TimeUtil.HOUR;
+    private static final long WEEKLY_REQUIRED_MS = 30 * TimeUtil.HOUR;
     private static final int DAILY_NOTIFICATION_ID = 4301;
     private static final int WEEKLY_NOTIFICATION_ID = 4302;
 
@@ -30,7 +30,7 @@ final class ReadyNotificationCenter {
     }
 
     private static void maybeNotifyDaily(Context context, DayflowDatabase db, DayflowPrefs prefs) {
-        if (db.countAnalyzedBatches() < DAILY_REQUIRED_BATCHES) return;
+        if (db.analyzedBatchDurationMs() < DAILY_REQUIRED_MS) return;
         String day = bestDailyDay(db);
         if (day.equals(prefs.dailyReadyNotifiedDay())) return;
 
@@ -52,7 +52,7 @@ final class ReadyNotificationCenter {
     }
 
     private static void maybeNotifyWeekly(Context context, DayflowDatabase db, DayflowPrefs prefs) {
-        if (db.countAnalyzedBatches() < WEEKLY_REQUIRED_BATCHES) return;
+        if (db.analyzedBatchDurationMs() < WEEKLY_REQUIRED_MS) return;
         long weekStart = bestWeeklyStart(db);
         if (weekStart <= 0 || weekStart == prefs.weeklyReadyNotifiedWeekStartMs()) return;
         if (showReadyNotification(

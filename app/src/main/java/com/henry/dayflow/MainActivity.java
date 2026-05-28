@@ -64,8 +64,8 @@ public final class MainActivity extends Activity {
     private static final int REQ_MEDIA_PROJECTION = 1001;
     private static final int REQ_NOTIFICATIONS = 1002;
     private static final int REQ_EXPORT_MARKDOWN = 1003;
-    private static final int DAILY_REQUIRED_BATCHES = 20;
-    private static final int WEEKLY_REQUIRED_BATCHES = 120;
+    private static final long DAILY_REQUIRED_MS = 5 * TimeUtil.HOUR;
+    private static final long WEEKLY_REQUIRED_MS = 30 * TimeUtil.HOUR;
     private static final String[] CATEGORY_COLOR_PRESETS = {
             "#B984FF", "#6AADFF", "#FFAE8C", "#FF5950", "#42D0BB", "#F96E00", "#90DDF0", "#A0AEC0"
     };
@@ -898,10 +898,10 @@ public final class MainActivity extends Activity {
     }
 
     private void renderDailyAccess() {
-        int analyzed = db.countAnalyzedBatches();
-        int capped = Math.min(DAILY_REQUIRED_BATCHES, Math.max(0, analyzed));
-        boolean ready = analyzed >= DAILY_REQUIRED_BATCHES;
-        float progress = capped / (float) DAILY_REQUIRED_BATCHES;
+        long analyzedMs = db.analyzedBatchDurationMs();
+        long cappedMs = Math.min(DAILY_REQUIRED_MS, Math.max(0L, analyzedMs));
+        boolean ready = analyzedMs >= DAILY_REQUIRED_MS;
+        float progress = cappedMs / (float) DAILY_REQUIRED_MS;
 
         LinearLayout panel = panel();
         panel.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -910,7 +910,7 @@ public final class MainActivity extends Activity {
         panel.addView(serif("Dayflow Daily", 34, Colors.TEXT));
         panel.addView(text("BETA", 12, Colors.ACCENT, true));
         panel.addView(text("Daily is a new way to visualize your day and turn it into a standup update fast.", 15, Colors.TEXT, false));
-        panel.addView(text("Daily unlocks after 5 hours of analyzed timeline data. " + dailyProgressText(analyzed), 13, Colors.MUTED, false));
+        panel.addView(text("Daily unlocks after 5 hours of analyzed timeline data. " + dailyProgressText(analyzedMs), 13, Colors.MUTED, false));
         panel.addView(progressBar(Colors.ACCENT, progress), new LinearLayout.LayoutParams(-1, dp(14)));
 
         addAssetImage(panel, "images/dayflow_content_area.png", 170);
@@ -995,7 +995,7 @@ public final class MainActivity extends Activity {
         actions.addView(analyze, new LinearLayout.LayoutParams(0, dp(42), 1));
         panel.addView(actions);
 
-        Button unlock = ready ? pillButton("Continue to Daily") : smallButton("Need " + (DAILY_REQUIRED_BATCHES - capped) + " more batches");
+        Button unlock = ready ? pillButton("Continue to Daily") : smallButton("Need " + TimeUtil.shortDuration(DAILY_REQUIRED_MS - cappedMs) + " more");
         unlock.setEnabled(ready);
         unlock.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
@@ -1048,27 +1048,12 @@ public final class MainActivity extends Activity {
         content.addView(panel);
     }
 
-    private String dailyProgressText(int analyzedBatches) {
-        int minutes = Math.min(DAILY_REQUIRED_BATCHES, Math.max(0, analyzedBatches)) * 15;
-        int hours = minutes / 60;
-        int remaining = minutes % 60;
-        String done;
-        if (minutes == 0) done = "0h";
-        else if (remaining == 0) done = hours + "h";
-        else if (hours == 0) done = remaining + "m";
-        else done = hours + "h " + remaining + "m";
-        return done + " / 5h";
+    private String dailyProgressText(long analyzedMs) {
+        return TimeUtil.shortDuration(Math.min(DAILY_REQUIRED_MS, Math.max(0L, analyzedMs))) + " / 5h";
     }
 
-    private String weeklyProgressText(int analyzedBatches) {
-        int minutes = Math.min(WEEKLY_REQUIRED_BATCHES, Math.max(0, analyzedBatches)) * 15;
-        int hours = minutes / 60;
-        int remaining = minutes % 60;
-        String done;
-        if (minutes == 0) done = "0h";
-        else if (remaining == 0) done = hours + "h";
-        else done = hours + "h " + remaining + "m";
-        return done + " / 30h";
+    private String weeklyProgressText(long analyzedMs) {
+        return TimeUtil.shortDuration(Math.min(WEEKLY_REQUIRED_MS, Math.max(0L, analyzedMs))) + " / 30h";
     }
 
     private boolean hasNotificationPermission() {
@@ -1581,7 +1566,7 @@ public final class MainActivity extends Activity {
     }
 
     private void renderWeekly() {
-        if (db.countAnalyzedBatches() < WEEKLY_REQUIRED_BATCHES) {
+        if (db.analyzedBatchDurationMs() < WEEKLY_REQUIRED_MS) {
             renderWeeklyAccess();
             return;
         }
@@ -1662,15 +1647,15 @@ public final class MainActivity extends Activity {
     }
 
     private void renderWeeklyAccess() {
-        int analyzed = db.countAnalyzedBatches();
-        int capped = Math.min(WEEKLY_REQUIRED_BATCHES, Math.max(0, analyzed));
-        float progress = capped / (float) WEEKLY_REQUIRED_BATCHES;
+        long analyzedMs = db.analyzedBatchDurationMs();
+        long cappedMs = Math.min(WEEKLY_REQUIRED_MS, Math.max(0L, analyzedMs));
+        float progress = cappedMs / (float) WEEKLY_REQUIRED_MS;
 
         LinearLayout panel = panel();
         panel.setGravity(Gravity.CENTER_HORIZONTAL);
         panel.addView(serif("Unlock Weekly", 34, Colors.TEXT));
         panel.addView(text("Weekly unlocks after 30 hours of analyzed timeline data.", 15, Colors.TEXT, false));
-        panel.addView(text(weeklyProgressText(analyzed), 13, Colors.MUTED, false));
+        panel.addView(text(weeklyProgressText(analyzedMs), 13, Colors.MUTED, false));
         panel.addView(progressBar(Colors.ACCENT, progress), new LinearLayout.LayoutParams(-1, dp(14)));
 
         LinearLayout pill = new LinearLayout(this);
@@ -1681,7 +1666,7 @@ public final class MainActivity extends Activity {
         pillBg.setStroke(1, Color.rgb(255, 137, 4));
         pillBg.setCornerRadius(dp(30));
         pill.setBackground(pillBg);
-        pill.addView(serif(weeklyProgressText(analyzed), 28, Colors.ACCENT));
+        pill.addView(serif(weeklyProgressText(analyzedMs), 28, Colors.ACCENT));
         LinearLayout.LayoutParams pillLp = new LinearLayout.LayoutParams(-1, dp(72));
         pillLp.setMargins(0, dp(16), 0, dp(16));
         panel.addView(pill, pillLp);
@@ -1690,7 +1675,7 @@ public final class MainActivity extends Activity {
         panel.addView(text("Usage Access: " + (appReader.hasUsageAccess() ? "enabled" : "needed")
                 + "\nScreen capture: " + captureHealthHeadline(prefs.captureHealth())
                 + "\nNotifications: " + (hasNotificationPermission() ? "enabled" : "needed")
-                + "\nRemaining batches: " + Math.max(0, WEEKLY_REQUIRED_BATCHES - capped), 14, Colors.TEXT, false));
+                + "\nRemaining time: " + TimeUtil.shortDuration(WEEKLY_REQUIRED_MS - cappedMs), 14, Colors.TEXT, false));
 
         LinearLayout actions = row();
         Button notify = pillButton(hasNotificationPermission() ? "Notify when ready" : "Enable notifications");

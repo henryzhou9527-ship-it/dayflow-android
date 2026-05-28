@@ -320,6 +320,18 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         }
     }
 
+    synchronized long analyzedBatchDurationMs() {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT COALESCE(SUM(CASE WHEN batch_end_ts > batch_start_ts THEN batch_end_ts - batch_start_ts ELSE 0 END), 0) " +
+                        "FROM analysis_batches WHERE status = 'analyzed'",
+                null);
+        try {
+            return c.moveToFirst() ? c.getLong(0) : 0L;
+        } finally {
+            c.close();
+        }
+    }
+
     synchronized long[] batchWindow(long batchId) {
         Cursor c = getReadableDatabase().rawQuery(
                 "SELECT batch_start_ts, batch_end_ts FROM analysis_batches WHERE id = ?",
