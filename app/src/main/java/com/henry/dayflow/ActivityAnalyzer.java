@@ -438,7 +438,7 @@ final class GeminiActivityAnalyzer implements ActivityAnalyzer {
     }
 
     private List<TimelineCard> parseCards(long batchId, List<ScreenshotRecord> screenshots, String text) throws Exception {
-        JSONArray array = new JSONArray(stripCodeFence(text));
+        JSONArray array = LlmJson.parseCardArray(text);
         long min = screenshots.get(0).capturedAtMs;
         long max = screenshots.get(screenshots.size() - 1).capturedAtMs;
         List<TimelineCard> cards = new ArrayList<>();
@@ -503,18 +503,6 @@ final class GeminiActivityAnalyzer implements ActivityAnalyzer {
         JSONArray parts = content.getJSONArray("parts");
         return parts.getJSONObject(0).getString("text");
     }
-
-    private static String stripCodeFence(String text) {
-        String trimmed = text == null ? "" : text.trim();
-        if (trimmed.startsWith("```")) {
-            int firstNewline = trimmed.indexOf('\n');
-            int lastFence = trimmed.lastIndexOf("```");
-            if (firstNewline >= 0 && lastFence > firstNewline) {
-                return trimmed.substring(firstNewline + 1, lastFence).trim();
-            }
-        }
-        return trimmed;
-    }
 }
 
 final class CustomApiActivityAnalyzer implements ActivityAnalyzer {
@@ -567,7 +555,7 @@ final class CustomApiActivityAnalyzer implements ActivityAnalyzer {
     }
 
     private List<TimelineCard> parseCards(long batchId, List<ScreenshotRecord> screenshots, String text) throws Exception {
-        JSONArray array = new JSONArray(stripCodeFence(text));
+        JSONArray array = LlmJson.parseCardArray(text);
         long min = screenshots.get(0).capturedAtMs;
         long max = screenshots.get(screenshots.size() - 1).capturedAtMs;
         List<TimelineCard> cards = new ArrayList<>();
@@ -602,18 +590,6 @@ final class CustomApiActivityAnalyzer implements ActivityAnalyzer {
 
     private static byte[] readBytes(File file, int maxBytes) throws Exception {
         return ScreenshotStorage.readJpegBytes(file, maxBytes);
-    }
-
-    private static String stripCodeFence(String text) {
-        String trimmed = text == null ? "" : text.trim();
-        if (trimmed.startsWith("```")) {
-            int firstNewline = trimmed.indexOf('\n');
-            int lastFence = trimmed.lastIndexOf("```");
-            if (firstNewline >= 0 && lastFence > firstNewline) {
-                return trimmed.substring(firstNewline + 1, lastFence).trim();
-            }
-        }
-        return trimmed;
     }
 }
 
@@ -668,7 +644,7 @@ final class OllamaActivityAnalyzer implements ActivityAnalyzer {
     }
 
     private List<TimelineCard> parseCards(long batchId, List<ScreenshotRecord> screenshots, String text) throws Exception {
-        JSONArray array = new JSONArray(stripCodeFence(text));
+        JSONArray array = LlmJson.parseCardArray(text);
         long min = screenshots.get(0).capturedAtMs;
         long max = screenshots.get(screenshots.size() - 1).capturedAtMs;
         List<TimelineCard> cards = new ArrayList<>();
@@ -724,17 +700,5 @@ final class OllamaActivityAnalyzer implements ActivityAnalyzer {
         String response = buffer.toString("UTF-8");
         if (connection.getResponseCode() >= 400) throw new IllegalStateException(response);
         return response;
-    }
-
-    private static String stripCodeFence(String text) {
-        String trimmed = text == null ? "" : text.trim();
-        if (trimmed.startsWith("```")) {
-            int firstNewline = trimmed.indexOf('\n');
-            int lastFence = trimmed.lastIndexOf("```");
-            if (firstNewline >= 0 && lastFence > firstNewline) {
-                return trimmed.substring(firstNewline + 1, lastFence).trim();
-            }
-        }
-        return trimmed;
     }
 }

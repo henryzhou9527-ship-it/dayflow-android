@@ -50,6 +50,7 @@ Implemented Android equivalent:
 - `AnalysisEngine`: explicit launcher/lock-screen idle shortcut that writes an Idle card without spending an AI call.
 - `ScreenshotStorage`: encrypted-at-rest capture files with compatibility readers for older plaintext screenshots.
 - `HybridActivityAnalyzer`: Custom API or Gemini vision when configured; otherwise local heuristic cards.
+- `LlmJson`: tolerant card parser for raw arrays, fenced JSON, and provider wrappers such as `cards`.
 - `MainActivity`: Dayflow-like Timeline, Daily, Weekly, Chat, and Settings surfaces.
 - `ProviderConnectionTester`: verifies Custom API with an OpenAI-compatible image message, not just a text ping.
 

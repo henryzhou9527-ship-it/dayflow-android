@@ -18,6 +18,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Provider settings include a backup provider so timeline analysis and chat can retry through another route before falling back locally.
 - Provider setup includes Android-native connection tests for Custom API, Gemini, and Ollama; the Custom API test sends a tiny vision payload so the selected endpoint proves it can read screenshots before timeline analysis depends on it.
 - Local diagnostics record provider attempts, fallback paths, batch decisions, errors, latency, and recent timeline state, with a copyable report in Settings and a dismissible in-app notice when analysis needs attention.
+- AI timeline parsing accepts plain JSON arrays, fenced JSON, and common `{ "cards": [...] }` wrappers so Custom API and local model outputs are less brittle.
 - Settings are organized into Dayflow-like Profile, Storage, Privacy, Providers, Export, and Other sections.
 - Other settings include app preference toggles and an output-language override that is passed into timeline analysis and chat prompts.
 - Adds first-run onboarding with Dayflow source preview assets, journal entries, daily goals, Dayflow-style review ratings, editable categories, color preset swatches, storage stats, per-app privacy blocking, day deletion, and reprocessing controls.
