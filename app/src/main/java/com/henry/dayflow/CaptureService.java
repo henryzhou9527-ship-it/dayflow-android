@@ -85,7 +85,7 @@ public final class CaptureService extends Service {
     private final MediaProjection.Callback projectionCallback = new MediaProjection.Callback() {
         @Override
         public void onStop() {
-            stopCapture(false, false);
+            stopCapture(true, false, "Projection stopped");
         }
     };
 
@@ -348,15 +348,19 @@ public final class CaptureService extends Service {
     }
 
     private void stopCapture(boolean stopSelf) {
-        stopCapture(stopSelf, true);
+        stopCapture(stopSelf, true, stopSelf ? "Stopped by user" : "Projection stopped");
     }
 
     private void stopCapture(boolean stopSelf, boolean stopProjection) {
+        stopCapture(stopSelf, stopProjection, stopSelf ? "Stopped by user" : "Projection stopped");
+    }
+
+    private void stopCapture(boolean stopSelf, boolean stopProjection, String reason) {
         running = false;
         handler.removeCallbacks(captureTick);
         handler.removeCallbacks(analysisTick);
         stopProjectionOnly(stopProjection);
-        prefs.markCaptureStopped(stopSelf ? "Stopped by user" : "Projection stopped");
+        prefs.markCaptureStopped(reason);
         refreshNotification();
         if (stopSelf) {
             stopForeground(true);
