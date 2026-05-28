@@ -24,55 +24,145 @@ final class ChatResponder {
 
     String answer(String day, String question) {
         String prompt = promptFor(day, question);
-        String answer = tryProvider(prefs.provider(), prompt);
-        if (answer != null && !answer.trim().isEmpty()) return answer;
+        ProviderResult result = tryProvider(prefs.provider(), prompt, "chat_answer");
+        if (result.hasText()) return result.text;
 
         if (!sameProvider(prefs.provider(), prefs.backupProvider())) {
-            answer = tryProvider(prefs.backupProvider(), prompt);
-            if (answer != null && !answer.trim().isEmpty()) return answer;
+            ProviderResult backup = tryProvider(prefs.backupProvider(), prompt, "chat_answer_backup");
+            if (backup.hasText()) return backup.text;
+            result = result.firstError == null ? backup : result;
         }
 
+        saveProviderFallbackNotice("chat_answer", result);
         return fallback(day, question);
     }
 
     String standup(String day) {
         String prompt = promptFor(day, "Write a concise standup update with exactly three sections: Yesterday's highlights, Today's tasks, and Blockers. Use short bullets grounded in the timeline and journal. Do not invent facts.");
-        String answer = tryProvider(prefs.provider(), prompt);
-        if (answer != null && !answer.trim().isEmpty()) return answer;
+        ProviderResult result = tryProvider(prefs.provider(), prompt, "daily_standup");
+        if (result.hasText()) return result.text;
 
         if (!sameProvider(prefs.provider(), prefs.backupProvider())) {
-            answer = tryProvider(prefs.backupProvider(), prompt);
-            if (answer != null && !answer.trim().isEmpty()) return answer;
+            ProviderResult backup = tryProvider(prefs.backupProvider(), prompt, "daily_standup_backup");
+            if (backup.hasText()) return backup.text;
+            result = result.firstError == null ? backup : result;
         }
 
+        saveProviderFallbackNotice("daily_standup", result);
         return standupFallback(day);
     }
 
     String journalSummary(String day) {
         String prompt = promptFor(day, "Write a warm first-person Dayflow journal summary for this day. Use the user's intentions, notes, reflections, timeline cards, and metrics only. Write 2 concise paragraphs. Mention what mattered, what got in the way, and one gentle closing observation. Do not invent facts.");
-        String answer = tryProvider(prefs.provider(), prompt);
-        if (answer != null && !answer.trim().isEmpty()) return answer;
+        ProviderResult result = tryProvider(prefs.provider(), prompt, "journal_summary");
+        if (result.hasText()) return result.text;
 
         if (!sameProvider(prefs.provider(), prefs.backupProvider())) {
-            answer = tryProvider(prefs.backupProvider(), prompt);
-            if (answer != null && !answer.trim().isEmpty()) return answer;
+            ProviderResult backup = tryProvider(prefs.backupProvider(), prompt, "journal_summary_backup");
+            if (backup.hasText()) return backup.text;
+            result = result.firstError == null ? backup : result;
         }
 
+        saveProviderFallbackNotice("journal_summary", result);
         return journalSummaryFallback(day);
     }
 
-    private String tryProvider(String providerName, String prompt) {
+    private ProviderResult tryProvider(String providerName, String prompt, String operation) {
         String provider = providerName == null ? "" : providerName.toLowerCase(Locale.US);
+        String resolved = resolvedProvider(providerName);
+        if (!isExternalProvider(provider)) return new ProviderResult(null, null, resolved);
+        long startedAt = System.currentTimeMillis();
         try {
-            if (isCustomProvider(provider)) return customApi(prompt);
-            if (provider.contains("ollama")) return ollama(prompt);
-            if (provider.contains("gemini") || (provider.trim().isEmpty() && prefs.useCloudAnalyzer())) {
-                if (prefs.geminiApiKey().trim().isEmpty()) return null;
-                return gemini(prompt);
+            String answer;
+            if (isCustomProvider(provider)) {
+                answer = customApi(prompt);
+            } else if (provider.contains("ollama")) {
+                answer = ollama(prompt);
+            } else {
+                if (prefs.geminiApiKey().trim().isEmpty()) throw new IllegalStateException("Gemini API key missing");
+                answer = gemini(prompt);
             }
-        } catch (Exception ignored) {
+            if (answer == null || answer.trim().isEmpty()) {
+                throw new IllegalStateException(resolved + " returned empty text");
+            }
+            saveCallLog(resolved, providerModel(providerName), operation, "success", startedAt, prompt, answer, null);
+            return new ProviderResult(answer, null, resolved);
+        } catch (Exception error) {
+            saveCallLog(resolved, providerModel(providerName), operation, "failure", startedAt, prompt, null, error);
+            return new ProviderResult(null, error, resolved);
         }
-        return null;
+    }
+
+    private void saveProviderFallbackNotice(String operation, ProviderResult result) {
+        if (result == null || result.firstError == null) return;
+        prefs.saveAnalysisNotice(
+                "warning",
+                "AI provider failed, so Dayflow used the local fallback for this result. "
+                        + result.firstError.getClass().getSimpleName() + ": "
+                        + shortText(result.firstError.getMessage(), 140),
+                operation,
+                result.provider,
+                sameProvider(prefs.provider(), prefs.backupProvider()) ? "" : resolvedProvider(prefs.backupProvider()),
+                0L);
+    }
+
+    private void saveCallLog(String provider, String model, String operation, String status, long startedAt, String prompt, String answer, Exception error) {
+        LlmCallLog log = new LlmCallLog();
+        log.createdAtMs = System.currentTimeMillis();
+        log.provider = provider;
+        log.model = model;
+        log.operation = operation;
+        log.status = status;
+        log.latencyMs = System.currentTimeMillis() - startedAt;
+        log.errorMessage = error == null ? null : error.getClass().getSimpleName() + ": " + error.getMessage();
+        log.requestSummary = "prompt_chars=" + (prompt == null ? 0 : prompt.length());
+        log.responseSummary = answer == null ? null : shortText(answer, 600);
+        db.saveLlmCall(log);
+    }
+
+    private String resolvedProvider(String providerName) {
+        String provider = providerName == null ? "" : providerName.trim();
+        String lower = provider.toLowerCase(Locale.US);
+        if (isCustomProvider(lower)) return "Custom API";
+        if (lower.contains("ollama")) return "Ollama";
+        if (lower.contains("gemini") || (lower.isEmpty() && prefs.useCloudAnalyzer())) return "Gemini";
+        return provider.trim().isEmpty() ? "Heuristic" : provider;
+    }
+
+    private String providerModel(String providerName) {
+        String provider = providerName == null ? "" : providerName.toLowerCase(Locale.US);
+        if (isCustomProvider(provider)) return prefs.customApiModel();
+        if (provider.contains("ollama")) return prefs.ollamaModel();
+        if (provider.contains("gemini") || (provider.trim().isEmpty() && prefs.useCloudAnalyzer())) return prefs.geminiModel();
+        return "";
+    }
+
+    private boolean isExternalProvider(String provider) {
+        if (isCustomProvider(provider)) return true;
+        if (provider.contains("ollama")) return true;
+        return provider.contains("gemini") || (provider.trim().isEmpty() && prefs.useCloudAnalyzer());
+    }
+
+    private static String shortText(String value, int max) {
+        String clean = value == null ? "" : value.replace('\n', ' ').trim();
+        if (clean.length() <= max) return clean;
+        return clean.substring(0, Math.max(0, max - 3)) + "...";
+    }
+
+    private static final class ProviderResult {
+        final String text;
+        final Exception firstError;
+        final String provider;
+
+        ProviderResult(String text, Exception firstError, String provider) {
+            this.text = text;
+            this.firstError = firstError;
+            this.provider = provider;
+        }
+
+        boolean hasText() {
+            return text != null && !text.trim().isEmpty();
+        }
     }
 
     private String promptFor(String day, String question) {

@@ -14,11 +14,11 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Retries stale pending, processing, or failed analysis batches after a cooldown so transient API/network problems do not permanently strand captured screenshots.
 - Skips AI calls for long launcher/lock-screen idle batches and writes an Idle card directly, matching Dayflow's lightweight idle shortcut behavior.
 - Supports Custom API endpoints with OpenAI-compatible chat completions, including base URLs or full `/chat/completions` URLs, Gemini vision analysis, heuristic fallback, and Ollama vision models such as `qwen3-vl:4b`.
-- Chat uses saved timeline cards, journal notes, category totals, and recent chat history, then answers through Custom API, Gemini, or Ollama when configured.
+- Chat, Daily standup, and Journal summaries use saved timeline cards, journal notes, category totals, and recent chat history, then answer through Custom API, Gemini, or Ollama when configured.
 - Chat renders Dayflow-style user/assistant bubbles, context chips, suggested prompts, markdown blocks, code blocks, copy actions, and lightweight feedback controls.
 - Provider settings include a backup provider so timeline analysis and chat can retry through another route before falling back locally.
 - Provider setup includes Android-native connection tests for Custom API, Gemini, and Ollama; the Custom API test sends a tiny vision payload and reports compact provider errors so the selected endpoint proves it can read screenshots before timeline analysis depends on it.
-- Local diagnostics record provider attempts, fallback paths, batch decisions, errors, latency, and recent timeline state, with a copyable report in Settings and a dismissible in-app notice when analysis needs attention.
+- Local diagnostics record provider attempts from timeline analysis, Chat, Daily, and Journal, including fallback paths, batch decisions, errors, latency, and recent timeline state, with a copyable report in Settings and a dismissible in-app notice when analysis or provider output needs attention.
 - AI timeline parsing accepts plain JSON arrays, fenced JSON, and common `{ "cards": [...] }` wrappers so Custom API and local model outputs are less brittle.
 - Settings are organized into Dayflow-like Profile, Storage, Privacy, Providers, Export, and Other sections.
 - Other settings include app preference toggles and an output-language override that is passed into timeline analysis and chat prompts.

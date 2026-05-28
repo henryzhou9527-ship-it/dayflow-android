@@ -292,7 +292,12 @@ public final class MainActivity extends Activity {
         bg.setStroke(1, error ? Color.rgb(255, 150, 130) : Color.rgb(241, 183, 81));
         bg.setCornerRadius(dp(8));
         panel.setBackground(bg);
-        panel.addView(text(error ? "Analysis needs attention" : "Analysis used fallback", 13, error ? Colors.DISTRACTION : Colors.ACCENT, true));
+        boolean timelineNotice = notice.operation != null
+                && (notice.operation.startsWith("timeline") || notice.operation.startsWith("batch"));
+        String noticeTitle = timelineNotice
+                ? (error ? "Analysis needs attention" : "Analysis used fallback")
+                : (error ? "Provider needs attention" : "Provider used fallback");
+        panel.addView(text(noticeTitle, 13, error ? Colors.DISTRACTION : Colors.ACCENT, true));
         panel.addView(text(notice.message, 14, Colors.TEXT, false));
         String meta = TimeUtil.timeLabel(notice.createdAtMs)
                 + (notice.batchId > 0 ? " · batch " + notice.batchId : "")
