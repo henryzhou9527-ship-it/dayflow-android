@@ -2459,7 +2459,7 @@ public final class MainActivity extends Activity {
         final ProviderSelection providerSelection = addProviderSelector(panel, prefs.provider(), prefs.backupProvider());
 
         final Switch cloud = new Switch(this);
-        cloud.setText("Use Gemini when API key is set");
+        cloud.setText("Prefer Gemini instead of Custom API");
         cloud.setTextColor(Colors.TEXT);
         cloud.setTypeface(DayflowType.sans(this));
         cloud.setChecked(prefs.useCloudAnalyzer());
@@ -2514,7 +2514,7 @@ public final class MainActivity extends Activity {
                 prefs.setProvider("Ollama");
                 prefs.setOllamaEndpoint(ollama.getText().toString());
                 prefs.setOllamaModel(ollamaModel.getText().toString());
-                setStatus("Ollama selected. Analyze now when the local model is running.");
+                setStatus("Ollama selected. Use Custom API if no local model is running.");
             }
         });
         panel.addView(useOllama, new LinearLayout.LayoutParams(-1, dp(42)));
@@ -3018,12 +3018,6 @@ public final class MainActivity extends Activity {
 
     private void renderSettingsOther(LinearLayout panel) {
         panel.addView(text("App preferences", 13, Colors.MUTED, true));
-        final Switch analytics = new Switch(this);
-        analytics.setText("Share crash reports and anonymous usage data");
-        analytics.setTextColor(Colors.TEXT);
-        analytics.setTypeface(DayflowType.sans(this));
-        analytics.setChecked(prefs.analyticsEnabled());
-        panel.addView(analytics);
         final Switch icons = new Switch(this);
         icons.setText("Show app/website icons in timeline");
         icons.setTextColor(Colors.TEXT);
@@ -3043,7 +3037,6 @@ public final class MainActivity extends Activity {
         Button save = pillButton("Save app preferences");
         save.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                prefs.setAnalyticsEnabled(analytics.isChecked());
                 prefs.setShowTimelineAppIcons(icons.isChecked());
                 prefs.setShowDailyGoalPopups(dailyPopups.isChecked());
                 prefs.setOutputLanguageOverride(language.getText().toString());
@@ -3454,7 +3447,7 @@ public final class MainActivity extends Activity {
             case 0: return "See the product shape before giving it access.";
             case 1: return "Pick the lens Dayflow should use for your work.";
             case 2: return "Save a tiny bit of context for provider recommendations.";
-            case 3: return "Choose local-only, cloud vision, or local vision.";
+            case 3: return "Choose Custom API first, with fallback available.";
             case 4: return "Add the exact model details and backup route.";
             case 5: return "Review labels and colors before cards are created.";
             case 6: return "Grant Usage Access, optional window context, and start capture.";

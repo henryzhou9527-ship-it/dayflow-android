@@ -76,10 +76,6 @@ final class DayflowPrefs {
         return prefs.getString("output_language_override", "");
     }
 
-    boolean analyticsEnabled() {
-        return prefs.getBoolean("analytics_enabled", false);
-    }
-
     boolean showTimelineAppIcons() {
         return prefs.getBoolean("show_timeline_app_icons", true);
     }
@@ -295,10 +291,6 @@ final class DayflowPrefs {
 
     void setOutputLanguageOverride(String language) {
         prefs.edit().putString("output_language_override", language == null ? "" : language.trim()).apply();
-    }
-
-    void setAnalyticsEnabled(boolean value) {
-        prefs.edit().putBoolean("analytics_enabled", value).apply();
     }
 
     void setShowTimelineAppIcons(boolean value) {

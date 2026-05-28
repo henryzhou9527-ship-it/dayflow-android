@@ -14,7 +14,7 @@ final class ProviderErrorFormatter {
 
         if (isCustomProvider(lowerProvider)) {
             if (containsAny(lower, "http 401", "http 403", "unauthorized", "forbidden")) {
-                return "Custom API rejected the request. Check the API key and account permissions.";
+                return "Custom API rejected the request. Check the API key, endpoint permissions, and model access.";
             }
             if (containsAny(lower, "http 404", "model not found", "not found")) {
                 return "Custom API could not find this endpoint or model. Check the base URL and model name.";
