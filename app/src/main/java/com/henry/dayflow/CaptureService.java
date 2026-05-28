@@ -85,7 +85,7 @@ public final class CaptureService extends Service {
     private final MediaProjection.Callback projectionCallback = new MediaProjection.Callback() {
         @Override
         public void onStop() {
-            stopCapture(false);
+            stopCapture(false, false);
         }
     };
 
@@ -113,11 +113,14 @@ public final class CaptureService extends Service {
             int resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0);
             Intent resultData = intent.getParcelableExtra(EXTRA_RESULT_DATA);
             if (resultCode != 0 && resultData != null) {
-                startProjection(resultCode, resultData);
+                if (startProjection(resultCode, resultData)) return START_NOT_STICKY;
+                stopServiceWithoutProjection("Screen capture could not start");
+                return START_NOT_STICKY;
             }
         }
 
-        return START_STICKY;
+        stopServiceWithoutProjection("Screen capture permission required");
+        return START_NOT_STICKY;
     }
 
     @Override
@@ -131,43 +134,71 @@ public final class CaptureService extends Service {
         super.onDestroy();
     }
 
-    private void startProjection(int resultCode, Intent resultData) {
+    private boolean startProjection(int resultCode, Intent resultData) {
         stopProjectionOnly();
         MediaProjectionManager manager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
         if (manager == null) {
             prefs.markCaptureError("MediaProjectionManager unavailable");
-            return;
+            return false;
         }
-        if (!verifyScreenshotStorage()) return;
-        projection = manager.getMediaProjection(resultCode, resultData);
+        if (!verifyScreenshotStorage()) return false;
+        try {
+            projection = manager.getMediaProjection(resultCode, resultData);
+        } catch (Exception error) {
+            prefs.markCaptureError("Screen capture permission failed: " + shortText(error.getClass().getSimpleName() + ": " + error.getMessage(), 120));
+            return false;
+        }
         if (projection == null) {
             prefs.markCaptureError("Screen capture permission result was unavailable");
-            return;
+            return false;
         }
-        projection.registerCallback(projectionCallback, handler);
+        try {
+            projection.registerCallback(projectionCallback, handler);
+        } catch (Exception error) {
+            prefs.markCaptureError("Could not register screen capture callback: " + shortText(error.getClass().getSimpleName() + ": " + error.getMessage(), 120));
+            stopProjectionOnly();
+            return false;
+        }
 
         DisplayMetrics metrics = new DisplayMetrics();
         WindowManager windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
         if (windowManager == null) {
             prefs.markCaptureError("Window manager unavailable");
-            return;
+            stopProjectionOnly();
+            return false;
         }
         windowManager.getDefaultDisplay().getRealMetrics(metrics);
         captureWidth = metrics.widthPixels;
         captureHeight = metrics.heightPixels;
         densityDpi = metrics.densityDpi;
+        if (captureWidth <= 0 || captureHeight <= 0 || densityDpi <= 0) {
+            prefs.markCaptureError("Invalid display metrics: " + captureWidth + " x " + captureHeight);
+            stopProjectionOnly();
+            return false;
+        }
         prefs.markCaptureProjectionStarted(captureWidth, captureHeight);
 
-        imageReader = ImageReader.newInstance(captureWidth, captureHeight, PixelFormat.RGBA_8888, 2);
-        virtualDisplay = projection.createVirtualDisplay(
-                "DayflowCapture",
-                captureWidth,
-                captureHeight,
-                densityDpi,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                imageReader.getSurface(),
-                null,
-                handler);
+        try {
+            imageReader = ImageReader.newInstance(captureWidth, captureHeight, PixelFormat.RGBA_8888, 2);
+            virtualDisplay = projection.createVirtualDisplay(
+                    "DayflowCapture",
+                    captureWidth,
+                    captureHeight,
+                    densityDpi,
+                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                    imageReader.getSurface(),
+                    null,
+                    handler);
+        } catch (Exception error) {
+            prefs.markCaptureError("Could not create screen capture display: " + shortText(error.getClass().getSimpleName() + ": " + error.getMessage(), 120));
+            stopProjectionOnly();
+            return false;
+        }
+        if (virtualDisplay == null) {
+            prefs.markCaptureError("Could not create virtual display");
+            stopProjectionOnly();
+            return false;
+        }
 
         running = true;
         refreshNotification();
@@ -175,6 +206,18 @@ public final class CaptureService extends Service {
         handler.removeCallbacks(analysisTick);
         handler.postDelayed(captureTick, 800);
         handler.postDelayed(analysisTick, 5_000);
+        return true;
+    }
+
+    private void stopServiceWithoutProjection(String reason) {
+        prefs.markCaptureStopped(reason);
+        CaptureHealth health = prefs.captureHealth();
+        if (health.lastCaptureErrorAtMs <= 0 || System.currentTimeMillis() - health.lastCaptureErrorAtMs > 2_000L) {
+            prefs.markCaptureError(reason + ". Open Dayflow and start capture again.");
+        }
+        refreshNotification();
+        stopForeground(true);
+        stopSelf();
     }
 
     private boolean verifyScreenshotStorage() {
@@ -296,10 +339,14 @@ public final class CaptureService extends Service {
     }
 
     private void stopCapture(boolean stopSelf) {
+        stopCapture(stopSelf, true);
+    }
+
+    private void stopCapture(boolean stopSelf, boolean stopProjection) {
         running = false;
         handler.removeCallbacks(captureTick);
         handler.removeCallbacks(analysisTick);
-        stopProjectionOnly();
+        stopProjectionOnly(stopProjection);
         prefs.markCaptureStopped(stopSelf ? "Stopped by user" : "Projection stopped");
         refreshNotification();
         if (stopSelf) {
@@ -309,6 +356,10 @@ public final class CaptureService extends Service {
     }
 
     private void stopProjectionOnly() {
+        stopProjectionOnly(true);
+    }
+
+    private void stopProjectionOnly(boolean stopProjection) {
         if (virtualDisplay != null) {
             virtualDisplay.release();
             virtualDisplay = null;
@@ -318,9 +369,18 @@ public final class CaptureService extends Service {
             imageReader = null;
         }
         if (projection != null) {
-            projection.unregisterCallback(projectionCallback);
-            projection.stop();
+            MediaProjection oldProjection = projection;
             projection = null;
+            if (stopProjection) {
+                try {
+                    oldProjection.unregisterCallback(projectionCallback);
+                } catch (Exception ignored) {
+                }
+                try {
+                    oldProjection.stop();
+                } catch (Exception ignored) {
+                }
+            }
         }
     }
 

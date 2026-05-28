@@ -4,8 +4,11 @@ import android.content.Context;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 final class AnalysisEngine {
+    private static final AtomicBoolean PROCESSING = new AtomicBoolean(false);
+
     private final Context context;
     private final DayflowDatabase db;
     private final DayflowPrefs prefs;
@@ -19,28 +22,44 @@ final class AnalysisEngine {
     }
 
     void processNow() {
-        List<ScreenshotRecord> screenshots = db.fetchUnprocessedScreenshots(System.currentTimeMillis() - TimeUtil.DAY);
-        List<Batch> batches = createBatches(screenshots);
-        for (Batch batch : batches) {
-            long batchId = db.saveBatch(batch.startMs, batch.endMs, batch.screenshots);
-            if (batchId > 0) analyzeBatch(batchId);
+        if (!PROCESSING.compareAndSet(false, true)) return;
+        try {
+            List<ScreenshotRecord> screenshots = db.fetchUnprocessedScreenshots(System.currentTimeMillis() - TimeUtil.DAY);
+            List<Batch> batches = createBatches(screenshots);
+            for (Batch batch : batches) {
+                long batchId = db.saveBatch(batch.startMs, batch.endMs, batch.screenshots);
+                if (batchId > 0) analyzeBatch(batchId);
+            }
+            ReadyNotificationCenter.checkAfterAnalysis(context);
+        } finally {
+            PROCESSING.set(false);
         }
-        ReadyNotificationCenter.checkAfterAnalysis(context);
     }
 
     int reprocessDay(String day) {
-        List<Long> batchIds = db.batchIdsForDay(day);
-        db.deleteTimelineDay(day);
-        if (batchIds.isEmpty()) {
-            processNow();
-            return 0;
+        if (!PROCESSING.compareAndSet(false, true)) return 0;
+        try {
+            List<Long> batchIds = db.batchIdsForDay(day);
+            db.deleteTimelineDay(day);
+            if (batchIds.isEmpty()) {
+                List<ScreenshotRecord> screenshots = db.fetchUnprocessedScreenshots(System.currentTimeMillis() - TimeUtil.DAY);
+                List<Batch> batches = createBatches(screenshots);
+                for (Batch batch : batches) {
+                    long batchId = db.saveBatch(batch.startMs, batch.endMs, batch.screenshots);
+                    if (batchId > 0) analyzeBatch(batchId);
+                }
+                ReadyNotificationCenter.checkAfterAnalysis(context);
+                return 0;
+            }
+            for (Long batchId : batchIds) {
+                db.resetBatchForReprocess(batchId);
+                analyzeBatch(batchId);
+            }
+            ReadyNotificationCenter.checkAfterAnalysis(context);
+            return batchIds.size();
+        } finally {
+            PROCESSING.set(false);
         }
-        for (Long batchId : batchIds) {
-            db.resetBatchForReprocess(batchId);
-            analyzeBatch(batchId);
-        }
-        ReadyNotificationCenter.checkAfterAnalysis(context);
-        return batchIds.size();
     }
 
     void analyzeBatch(long batchId) {
