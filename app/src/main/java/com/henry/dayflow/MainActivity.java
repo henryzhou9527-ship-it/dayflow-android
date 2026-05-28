@@ -119,7 +119,7 @@ public final class MainActivity extends Activity {
             } else {
                 startService(service);
             }
-            setStatus("Recording started. A full Dayflow card appears after the first 15-minute batch.");
+            setStatus("Recording started. A full Dayflow card appears after the first analysis batch.");
         }
         if (requestCode == REQ_EXPORT_MARKDOWN) {
             if (resultCode == RESULT_OK && data != null && data.getData() != null && pendingExportMarkdown != null) {
@@ -370,7 +370,7 @@ public final class MainActivity extends Activity {
         panel.addView(logo, new LinearLayout.LayoutParams(dp(72), dp(72)));
         panel.addView(serif("Your day, written automatically", 34, Colors.TEXT));
         panel.addView(text("Dayflow turns private screen snapshots into a calm timeline, daily journal, review surface, and chat memory. Use a Custom API endpoint, Gemini, Ollama, or the built-in fallback to read screenshots.", 14, Colors.TEXT, false));
-        addOnboardingPreview(panel, "images/onboarding/timeline.png", "Timeline builds itself", "15-minute batches become readable cards with summaries, categories, and screenshots.");
+        addOnboardingPreview(panel, "images/onboarding/timeline.png", "Timeline builds itself", "Analysis batches become readable cards with summaries, categories, and screenshots.");
         addHowItWorksCards(panel);
         Button start = pillButton("Start setup");
         start.setOnClickListener(new View.OnClickListener() {
@@ -616,7 +616,7 @@ public final class MainActivity extends Activity {
     private void renderOnboardingCompletion() {
         LinearLayout panel = panel();
         panel.addView(serif("Dayflow is ready", 32, Colors.TEXT));
-        panel.addView(text("Leave recording on and return after one full 15-minute batch. Your timeline, daily summary, review frames, journal, and chat context will all grow from the same local history.", 14, Colors.TEXT, false));
+        panel.addView(text("Leave recording on and return after one full analysis batch. Your timeline, daily summary, review frames, journal, and chat context will all grow from the same local history.", 14, Colors.TEXT, false));
         addOnboardingPreview(panel, "images/onboarding/journal.png", "Journal from the same day", "Intentions, notes, reflections, and generated summaries stay tied to the timeline.");
         addOnboardingPreview(panel, "images/onboarding/weekly_calendar.jpg", "Weekly patterns", "Heatmaps, context shifts, app flows, and review data roll up after enough history is captured.");
         panel.addView(text("Role: " + prefs.onboardingRole() + "\nProvider: " + prefs.provider() + "\nBackup: " + prefs.backupProvider(), 14, Colors.MUTED, false));
@@ -760,7 +760,7 @@ public final class MainActivity extends Activity {
         if (weekCards.isEmpty()) {
             LinearLayout empty = panel();
             empty.addView(serif("No timeline cards this week", 24, Colors.TEXT));
-            empty.addView(text("Start recording and Dayflow will fill this weekly timeline from the same 15-minute batches.", 14, Colors.MUTED, false));
+            empty.addView(text("Start recording and Dayflow will fill this weekly timeline from the same analysis batches.", 14, Colors.MUTED, false));
             content.addView(empty);
         } else {
             renderCardList(weekCards);
@@ -908,7 +908,6 @@ public final class MainActivity extends Activity {
         DayflowLogoView logo = new DayflowLogoView(this);
         panel.addView(logo, new LinearLayout.LayoutParams(dp(64), dp(64)));
         panel.addView(serif("Dayflow Daily", 34, Colors.TEXT));
-        panel.addView(text("BETA", 12, Colors.ACCENT, true));
         panel.addView(text("Daily is a new way to visualize your day and turn it into a standup update fast.", 15, Colors.TEXT, false));
         panel.addView(text("Daily unlocks after 5 hours of analyzed timeline data. " + dailyProgressText(analyzedMs), 13, Colors.MUTED, false));
         panel.addView(progressBar(Colors.ACCENT, progress), new LinearLayout.LayoutParams(-1, dp(14)));

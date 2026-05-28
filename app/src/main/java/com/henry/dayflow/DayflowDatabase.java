@@ -480,7 +480,7 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         values.put("day", day);
         values.put("title", "Installed Dayflow!");
         values.put("summary", onboardingSummary(provider));
-        values.put("detailed_summary", "This sample card mirrors the original Dayflow onboarding card so the first timeline is not empty. Real cards will replace it once Dayflow has enough captured screen history to analyze.");
+        values.put("detailed_summary", "This sample card mirrors the original Dayflow onboarding card so the first timeline is not empty. Real cards will replace it once Dayflow has enough captured screen history for a full analysis batch.");
         values.put("category", category);
         values.put("subcategory", "Setup");
         values.put("metadata", "onboarding_card=1;app=dayflow.so;provider=" + safeMetadata(provider) + ";");
@@ -1609,12 +1609,12 @@ final class DayflowDatabase extends SQLiteOpenHelper {
     private static String onboardingSummary(String provider) {
         String value = provider == null ? "" : provider.trim().toLowerCase(Locale.US);
         if (value.contains("gemini")) {
-            return "You successfully installed Dayflow and configured it with Gemini AI. Come back in 30 minutes to see your first real activity card. This is a sample card, so you can see what your timeline will look like.";
+            return "You successfully installed Dayflow and configured it with Gemini AI. Come back after one full analysis batch to see your first real activity card. This is a sample card, so you can see what your timeline will look like.";
         }
         if (value.contains("ollama")) {
-            return "You successfully installed Dayflow with Ollama. Your data stays on your device while the local model helps read the day. Come back in 30 minutes to see your first real activity card.";
+            return "You successfully installed Dayflow with Ollama. Your data stays on your device while the local model helps read the day. Come back after one full analysis batch to see your first real activity card.";
         }
-        return "You successfully installed Dayflow. Come back in 30 minutes to see your first real activity card. This is a sample card, so you can see what your timeline will look like.";
+        return "You successfully installed Dayflow. Come back after one full analysis batch to see your first real activity card. This is a sample card, so you can see what your timeline will look like.";
     }
 
     private static String safeMetadata(String value) {

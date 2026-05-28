@@ -587,7 +587,7 @@ final class TimelineCanvasView extends View {
 
         if (cards.isEmpty()) {
             drawSerif(canvas, "No timeline yet", labelW + dp(12), dp(80), dp(28), Colors.TEXT);
-            drawSans(canvas, "Start recording and Dayflow will build cards after a full 15-minute batch.", labelW + dp(12), dp(112), dp(12), Colors.MUTED);
+            drawSans(canvas, "Start recording and Dayflow will build cards after a full analysis batch.", labelW + dp(12), dp(112), dp(12), Colors.MUTED);
             return;
         }
 
