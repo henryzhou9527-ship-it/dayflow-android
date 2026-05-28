@@ -459,9 +459,9 @@ public final class MainActivity extends Activity {
         final EditText provider = field("Provider: Custom API, Gemini, Ollama, or Heuristic", prefs.provider(), true);
         final EditText backupProvider = field("Backup provider", prefs.backupProvider(), true);
         final EditText customEndpoint = field("Custom API endpoint", prefs.customApiEndpoint(), true);
-        final EditText customKey = field("Custom API key", prefs.customApiKey(), true);
+        final EditText customKey = secretField("Custom API key", prefs.customApiKey());
         final EditText customModel = field("Custom API model", prefs.customApiModel(), true);
-        final EditText apiKey = field("Gemini API key", prefs.geminiApiKey(), true);
+        final EditText apiKey = secretField("Gemini API key", prefs.geminiApiKey());
         final EditText model = field("Gemini model", prefs.geminiModel(), true);
         final EditText ollama = field("Ollama endpoint", prefs.ollamaEndpoint(), true);
         final EditText ollamaModel = field("Ollama vision model", prefs.ollamaModel(), true);
@@ -2400,13 +2400,13 @@ public final class MainActivity extends Activity {
         final EditText customEndpoint = field("Custom API endpoint", prefs.customApiEndpoint(), true);
         panel.addView(customEndpoint, new LinearLayout.LayoutParams(-1, dp(56)));
 
-        final EditText customKey = field("Custom API key", prefs.customApiKey(), true);
+        final EditText customKey = secretField("Custom API key", prefs.customApiKey());
         panel.addView(customKey, new LinearLayout.LayoutParams(-1, dp(56)));
 
         final EditText customModel = field("Custom API model", prefs.customApiModel(), true);
         panel.addView(customModel, new LinearLayout.LayoutParams(-1, dp(56)));
 
-        final EditText apiKey = field("Gemini API key", prefs.geminiApiKey(), true);
+        final EditText apiKey = secretField("Gemini API key", prefs.geminiApiKey());
         apiKey.setText(prefs.geminiApiKey());
         panel.addView(apiKey, new LinearLayout.LayoutParams(-1, dp(56)));
 
@@ -2835,9 +2835,9 @@ public final class MainActivity extends Activity {
         final EditText provider = field("Provider: Custom API, Heuristic, Gemini, or Ollama", prefs.provider(), true);
         final EditText backupProvider = field("Backup provider", prefs.backupProvider(), true);
         final EditText customEndpoint = field("Custom API endpoint", prefs.customApiEndpoint(), true);
-        final EditText customKey = field("Custom API key", prefs.customApiKey(), true);
+        final EditText customKey = secretField("Custom API key", prefs.customApiKey());
         final EditText customModel = field("Custom API model", prefs.customApiModel(), true);
-        final EditText apiKey = field("Gemini API key", prefs.geminiApiKey(), true);
+        final EditText apiKey = secretField("Gemini API key", prefs.geminiApiKey());
         final EditText model = field("Gemini model", prefs.geminiModel(), true);
         final EditText ollama = field("Ollama endpoint", prefs.ollamaEndpoint(), true);
         final EditText ollamaModel = field("Ollama vision model", prefs.ollamaModel(), true);
@@ -4446,6 +4446,13 @@ public final class MainActivity extends Activity {
         bg.setStroke(1, Colors.STROKE);
         bg.setCornerRadius(dp(12));
         edit.setBackground(bg);
+        return edit;
+    }
+
+    private EditText secretField(String hint, String value) {
+        EditText edit = field(hint, value, true);
+        edit.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        edit.setSelectAllOnFocus(false);
         return edit;
     }
 
