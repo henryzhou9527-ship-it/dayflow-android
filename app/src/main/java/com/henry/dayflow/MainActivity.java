@@ -3228,7 +3228,9 @@ public final class MainActivity extends Activity {
                 if (enabled.isChecked()) {
                     maybeRequestNotifications();
                     JournalReminderScheduler.reschedule(MainActivity.this);
-                    setStatus("Journal reminders scheduled.");
+                    setStatus(prefs.journalRemindersHaveWeekday()
+                            ? "Journal reminders scheduled."
+                            : "Choose at least one weekday to schedule reminders.");
                 } else {
                     JournalReminderScheduler.cancel(MainActivity.this);
                     setStatus("Journal reminders disabled.");

@@ -20,6 +20,7 @@ final class JournalReminderScheduler {
         DayflowPrefs prefs = new DayflowPrefs(context);
         cancel(context);
         if (!prefs.journalRemindersEnabled()) return;
+        if (!prefs.journalRemindersHaveWeekday()) return;
         scheduleKind(context, prefs, KIND_INTENTIONS);
         scheduleKind(context, prefs, KIND_REFLECTIONS);
     }
@@ -34,12 +35,14 @@ final class JournalReminderScheduler {
     static void scheduleNext(Context context, String kind) {
         DayflowPrefs prefs = new DayflowPrefs(context);
         if (!prefs.journalRemindersEnabled()) return;
+        if (!prefs.journalRemindersHaveWeekday()) return;
         scheduleKind(context, prefs, kind == null ? KIND_REFLECTIONS : kind);
     }
 
     static String reminderSummary(Context context) {
         DayflowPrefs prefs = new DayflowPrefs(context);
         if (!prefs.journalRemindersEnabled()) return "Reminders off";
+        if (!prefs.journalRemindersHaveWeekday()) return "Reminders on · no weekdays selected";
         return String.format(
                 Locale.US,
                 "Intentions %02d:%02d · Reflections %02d:%02d · %s",

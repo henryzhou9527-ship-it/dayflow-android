@@ -32,7 +32,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Timeline and review cards can generate, save, regenerate, and play MP4 timelapse summaries from the card's captured screenshots, skipping unreadable frames instead of failing the whole video.
 - Daily view surfaces day-goal progress, focus summaries, distraction summaries, an original-style touch workflow grid with dynamic time windows, totals, stats, distraction markers, and editable Dayflow-style standup cards for highlights, tasks, and blockers.
 - Daily standups are stored by day and can be saved or regenerated through the selected provider with fallback.
-- Journal reminders can schedule recurring intention and reflection notifications on selected weekdays, with boot-time rescheduling.
+- Journal reminders can schedule recurring intention and reflection notifications on selected weekdays, skip scheduling when no weekday is selected, and recover after reboot, app update, or time-zone changes.
 - Daily and Weekly ready notifications mirror Dayflow's return-to-review flow, opening directly into the relevant Android tab when enough analyzed history exists.
 - Journal uses an original-style two-page board for intentions, notes, long-term goals, reflections, and Dayflow-generated daily summaries.
 - Redacts screenshots for blocked apps while still preserving timeline continuity.

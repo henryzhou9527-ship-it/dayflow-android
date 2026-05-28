@@ -137,6 +137,14 @@ final class DayflowPrefs {
         return (journalWeekdayMask() & (1 << Math.max(1, Math.min(7, calendarWeekday)))) != 0;
     }
 
+    boolean journalRemindersHaveWeekday() {
+        int mask = journalWeekdayMask();
+        for (int day = 1; day <= 7; day++) {
+            if ((mask & (1 << day)) != 0) return true;
+        }
+        return false;
+    }
+
     AnalysisNotice analysisNotice() {
         AnalysisNotice notice = new AnalysisNotice();
         notice.createdAtMs = prefs.getLong("analysis_notice_created_at", 0L);
