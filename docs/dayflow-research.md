@@ -25,7 +25,7 @@ Core pipeline:
 - `observations`: AI transcription/observation output.
 - `timeline_cards`: final visible activity cards.
 - `AnalysisManager`: checks every minute, builds completed batches from the last 24 hours.
-- `LLMService`: provider router for Dayflow backend, Gemini, Ollama, and chat CLI providers.
+- `LLMService`: provider router in the source; the Android clone prioritizes Custom API, Gemini, Ollama, and heuristic routes instead of hosted-only services.
 - `BatchingConfig`: 15-minute target batches, 2-minute max capture gap, 45-minute card lookback.
 - Idle shortcut: long mostly-idle windows can skip LLM and become an Idle card.
 
@@ -48,10 +48,11 @@ Implemented Android equivalent:
 - `AnalysisEngine`: 24-hour lookback, 15-minute batch target, 2-minute split gap, 45-minute replacement window.
 - `AnalysisEngine`: explicit launcher/lock-screen idle shortcut that writes an Idle card without spending an AI call.
 - `ScreenshotStorage`: encrypted-at-rest capture files with compatibility readers for older plaintext screenshots.
-- `HybridActivityAnalyzer`: Gemini vision when configured; otherwise local heuristic cards.
+- `HybridActivityAnalyzer`: Custom API or Gemini vision when configured; otherwise local heuristic cards.
 - `MainActivity`: Dayflow-like Timeline, Daily, Weekly, Chat, and Settings surfaces.
+- `ProviderConnectionTester`: verifies Custom API with an OpenAI-compatible image message, not just a text ping.
 
 ## What To Improve Next
 
-- Add richer source-level provider parity for Dayflow backend and chat CLI routes.
+- Broaden Custom API compatibility checks across common OpenAI-compatible providers and model families.
 - Add deeper mobile QA on a physical Android device for capture continuity, notification deep links, and long-run battery behavior.

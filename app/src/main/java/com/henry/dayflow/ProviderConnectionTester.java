@@ -1,5 +1,9 @@
 package com.henry.dayflow;
 
+import android.graphics.Bitmap;
+import android.graphics.Color;
+import android.util.Base64;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -56,11 +60,24 @@ final class ProviderConnectionTester {
 
     static String testCustomApi(String endpoint, String apiKey, String model) throws Exception {
         String selectedModel = OpenAiCompatibleClient.selectedModel(model);
-        JSONObject body = OpenAiCompatibleClient.textBody(selectedModel, "Reply with exactly: OK", 0);
+        JSONArray images = new JSONArray().put(tinyJpegBase64());
+        JSONObject body = OpenAiCompatibleClient
+                .visionBody(selectedModel, "Look at this tiny image and reply with exactly: OK", images, 0)
+                .put("max_tokens", 16);
         String response = OpenAiCompatibleClient.postChatCompletion(endpoint, apiKey, body, 60_000);
         String text = OpenAiCompatibleClient.extractText(response);
         if (text.trim().isEmpty()) throw new IllegalStateException("Custom API returned empty text");
-        return "Custom API connected · " + selectedModel;
+        return "Custom API connected · vision OK · " + selectedModel;
+    }
+
+    private static String tinyJpegBase64() throws Exception {
+        Bitmap bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888);
+        bitmap.eraseColor(Color.WHITE);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        boolean encoded = bitmap.compress(Bitmap.CompressFormat.JPEG, 80, out);
+        bitmap.recycle();
+        if (!encoded) throw new IllegalStateException("Could not encode test image");
+        return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
     }
 
     private static String postJson(String endpoint, String json, int readTimeoutMs) throws Exception {

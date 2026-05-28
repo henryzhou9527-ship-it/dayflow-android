@@ -2853,7 +2853,7 @@ public final class MainActivity extends Activity {
             setStatus("Heuristic provider is local and ready.");
             return;
         }
-        setStatus("Testing provider connection...");
+        setStatus(isCustomProvider(normalized) ? "Testing Custom API vision..." : "Testing provider connection...");
         new Thread(new Runnable() {
             @Override public void run() {
                 try {

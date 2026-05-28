@@ -15,7 +15,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Chat uses saved timeline cards, journal notes, category totals, and recent chat history, then answers through Custom API, Gemini, or Ollama when configured.
 - Chat renders Dayflow-style user/assistant bubbles, context chips, suggested prompts, markdown blocks, code blocks, copy actions, and lightweight feedback controls.
 - Provider settings include a backup provider so timeline analysis and chat can retry through another route before falling back locally.
-- Provider setup includes Android-native connection tests for Custom API, Gemini, and Ollama so the selected engine can be checked during onboarding or later in Settings.
+- Provider setup includes Android-native connection tests for Custom API, Gemini, and Ollama; the Custom API test sends a tiny vision payload so the selected endpoint proves it can read screenshots before timeline analysis depends on it.
 - Local diagnostics record provider attempts, fallback paths, batch decisions, errors, latency, and recent timeline state, with a copyable report in Settings and a dismissible in-app notice when analysis needs attention.
 - Settings are organized into Dayflow-like Profile, Storage, Privacy, Providers, Export, and Other sections.
 - Other settings include app preference toggles and an output-language override that is passed into timeline analysis and chat prompts.
