@@ -43,6 +43,7 @@ Android constraints:
 Implemented Android equivalent:
 
 - `CaptureService`: foreground MediaProjection service, screenshot loop, Android Keystore-encrypted local screenshot storage.
+- `CaptureService`: checks encrypted screenshot storage before opening a capture session, so storage failures surface before a zero-frame recording run.
 - `ForegroundAppReader`: reads recent UsageStats events for foreground app label/package.
 - `DayflowDatabase`: local SQLite schema modeled after Dayflow tables.
 - `AnalysisEngine`: 24-hour lookback, 15-minute batch target, 2-minute split gap, 45-minute replacement window.

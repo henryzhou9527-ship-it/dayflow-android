@@ -138,6 +138,7 @@ public final class CaptureService extends Service {
             prefs.markCaptureError("MediaProjectionManager unavailable");
             return;
         }
+        if (!verifyScreenshotStorage()) return;
         projection = manager.getMediaProjection(resultCode, resultData);
         if (projection == null) {
             prefs.markCaptureError("Screen capture permission result was unavailable");
@@ -174,6 +175,17 @@ public final class CaptureService extends Service {
         handler.removeCallbacks(analysisTick);
         handler.postDelayed(captureTick, 800);
         handler.postDelayed(analysisTick, 5_000);
+    }
+
+    private boolean verifyScreenshotStorage() {
+        try {
+            ScreenshotStorage.verifyEncryptedStorage(new File(getCacheDir(), "screenshot_storage_check"));
+            return true;
+        } catch (Exception error) {
+            prefs.markCaptureError("Screenshot storage check failed: " + shortText(error.getClass().getSimpleName() + ": " + error.getMessage(), 120));
+            refreshNotification();
+            return false;
+        }
     }
 
     private void captureLatestImage() {

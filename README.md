@@ -9,6 +9,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Uses Usage Access metadata to identify the foreground app.
 - Can optionally use an Android AccessibilityService as a local-only second signal for window titles and short visible-text snippets, improving analysis without sign-in.
 - Tracks recording health locally, including service heartbeat, last successful frame, capture errors, active resolution, and restart prompts when the recorder needs attention.
+- Verifies encrypted screenshot storage before starting capture and exposes a manual storage test in Settings.
 - Builds 15-minute analysis batches and rewrites cards with a 45-minute lookback window.
 - Skips AI calls for long launcher/lock-screen idle batches and writes an Idle card directly, matching Dayflow's lightweight idle shortcut behavior.
 - Supports Custom API endpoints with OpenAI-compatible chat completions, Gemini vision analysis, heuristic fallback, and Ollama vision models such as `qwen3-vl:4b`.

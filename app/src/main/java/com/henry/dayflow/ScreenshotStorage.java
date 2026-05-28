@@ -54,6 +54,28 @@ final class ScreenshotStorage {
         }
     }
 
+    static void verifyEncryptedStorage(File dir) throws Exception {
+        if (dir != null && !dir.exists() && !dir.mkdirs()) {
+            throw new IOException("Could not create storage check folder");
+        }
+        File file = new File(dir, "storage-check-" + System.currentTimeMillis() + ".dfjpg");
+        Bitmap bitmap = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888);
+        bitmap.eraseColor(0xffffffff);
+        try {
+            writeEncryptedJpeg(bitmap, file, 80);
+            if (!isEncrypted(file)) throw new IOException("Storage check file was not encrypted");
+            byte[] data = readJpegBytes(file, 1024 * 1024);
+            Bitmap decoded = BitmapFactory.decodeByteArray(data, 0, data.length);
+            if (decoded == null || decoded.getWidth() <= 0 || decoded.getHeight() <= 0) {
+                throw new IOException("Storage check image was unreadable");
+            }
+            decoded.recycle();
+        } finally {
+            bitmap.recycle();
+            if (file.isFile()) file.delete();
+        }
+    }
+
     static byte[] readJpegBytes(File file, int maxBytes) throws IOException {
         if (file == null || !file.isFile()) throw new IOException("Screenshot file is missing");
         if (isEncrypted(file)) {

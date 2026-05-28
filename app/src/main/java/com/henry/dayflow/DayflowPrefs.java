@@ -374,6 +374,8 @@ final class DayflowPrefs {
                 .putLong("capture_last_heartbeat_at", now)
                 .putInt("capture_width", Math.max(0, width))
                 .putInt("capture_height", Math.max(0, height))
+                .putLong("capture_last_error_at", 0L)
+                .putString("capture_last_error", "")
                 .putString("capture_stop_reason", "")
                 .apply();
     }
@@ -394,7 +396,15 @@ final class DayflowPrefs {
                 .putLong("capture_last_file_bytes", Math.max(0L, fileBytes))
                 .putString("capture_last_package_name", packageName == null ? "" : packageName)
                 .putString("capture_last_app_label", appLabel == null ? "" : appLabel)
+                .putString("capture_last_error", "")
                 .putInt("capture_success_count", Math.max(0, prefs.getInt("capture_success_count", 0)) + 1)
+                .apply();
+    }
+
+    void clearCaptureError() {
+        prefs.edit()
+                .putLong("capture_last_error_at", 0L)
+                .putString("capture_last_error", "")
                 .apply();
     }
 

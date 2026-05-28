@@ -2637,6 +2637,11 @@ public final class MainActivity extends Activity {
                 stats.timelapseCount + " timelapses · " + bytes(stats.timelapseBytes) + "\n" +
                 stats.cardCount + " cards · " + stats.batchCount + " batches", 14, Colors.TEXT, false));
         panel.addView(text("Screenshot storage: encrypted for new captures. Older saved frames stay readable for analysis and playback.", 13, Colors.MUTED, false));
+        Button storageCheck = smallButton("Test encrypted screenshot storage");
+        storageCheck.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { testScreenshotStorage(); }
+        });
+        panel.addView(storageCheck, new LinearLayout.LayoutParams(-1, dp(42)));
         final EditText retention = field("Screenshot retention days", String.valueOf(prefs.retentionDays()), true);
         retention.setInputType(InputType.TYPE_CLASS_NUMBER);
         panel.addView(retention, new LinearLayout.LayoutParams(-1, dp(54)));
@@ -2684,6 +2689,32 @@ public final class MainActivity extends Activity {
             }
         });
         panel.addView(deleteTimelapses, new LinearLayout.LayoutParams(-1, dp(44)));
+    }
+
+    private void testScreenshotStorage() {
+        setStatus("Testing encrypted screenshot storage...");
+        new Thread(new Runnable() {
+            @Override public void run() {
+                try {
+                    ScreenshotStorage.verifyEncryptedStorage(new File(getCacheDir(), "screenshot_storage_check"));
+                    prefs.clearCaptureError();
+                    runOnUiThread(new Runnable() {
+                        @Override public void run() {
+                            setStatus("Encrypted screenshot storage is ready.");
+                            refresh();
+                        }
+                    });
+                } catch (final Exception error) {
+                    prefs.markCaptureError("Screenshot storage check failed: " + shortText(error.getClass().getSimpleName() + ": " + error.getMessage(), 120));
+                    runOnUiThread(new Runnable() {
+                        @Override public void run() {
+                            setStatus("Storage test failed: " + shortText(error.getClass().getSimpleName() + ": " + error.getMessage(), 90));
+                            refresh();
+                        }
+                    });
+                }
+            }
+        }, "dayflow-storage-test").start();
     }
 
     private void renderSettingsPrivacy(LinearLayout panel) {
