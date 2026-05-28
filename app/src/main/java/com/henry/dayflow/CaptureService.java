@@ -262,13 +262,15 @@ public final class CaptureService extends Service {
             ScreenshotStorage.writeEncryptedJpeg(scaled, file, 85);
             scaled.recycle();
 
+            String storedWindowTitle = blocked ? "Blocked app" : window.title;
+            String storedVisibleText = blocked ? "" : window.text;
             db.insertScreenshot(
                     file,
                     System.currentTimeMillis(),
                     app.packageName,
                     app.label,
-                    window.title,
-                    window.text);
+                    storedWindowTitle,
+                    storedVisibleText);
             prefs.markCaptureSuccess(app.packageName, app.label, file.length());
             refreshNotification();
         } catch (Exception error) {
