@@ -48,7 +48,7 @@ final class TimelapseGenerator {
     }
 
     private void generate(List<ScreenshotRecord> sourceScreenshots, File output) throws IOException {
-        List<ScreenshotRecord> screenshots = existingScreenshots(sourceScreenshots);
+        List<ScreenshotRecord> screenshots = readableScreenshots(sourceScreenshots);
         if (screenshots.isEmpty()) throw new IOException("No saved screenshots for this card");
         if (screenshots.size() == 1) screenshots.add(screenshots.get(0));
 
@@ -205,11 +205,15 @@ final class TimelapseGenerator {
         return count;
     }
 
-    private static List<ScreenshotRecord> existingScreenshots(List<ScreenshotRecord> source) {
+    private static List<ScreenshotRecord> readableScreenshots(List<ScreenshotRecord> source) {
         List<ScreenshotRecord> result = new ArrayList<>();
         for (ScreenshotRecord record : source) {
             if (record != null && record.filePath != null && new File(record.filePath).isFile()) {
-                result.add(record);
+                try {
+                    BitmapFactory.Options bounds = ScreenshotStorage.decodeBounds(record.filePath);
+                    if (bounds.outWidth > 0 && bounds.outHeight > 0) result.add(record);
+                } catch (IOException ignored) {
+                }
             }
         }
         return result;

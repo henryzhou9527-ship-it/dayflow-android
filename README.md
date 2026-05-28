@@ -29,7 +29,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Timeline includes Day/Week mode switching, native date picking, quick copy/export actions, and week-level clipboard/export output that mirror Dayflow's timeline workflow while staying touch-first on Android.
 - Timeline cards include category/time pills, screenshot preview thumbnails, SUMMARY/DETAILED SUMMARY sections, and tap-to-play timelapse entry points.
 - Timeline week mode renders a seven-day 4 AM-to-4 AM grid with tappable activity cards and day columns, giving the original week timeline behavior an Android-native inspector flow.
-- Timeline and review cards can generate, save, regenerate, and play MP4 timelapse summaries from the card's captured screenshots.
+- Timeline and review cards can generate, save, regenerate, and play MP4 timelapse summaries from the card's captured screenshots, skipping unreadable frames instead of failing the whole video.
 - Daily view surfaces day-goal progress, focus summaries, distraction summaries, an original-style touch workflow grid with dynamic time windows, totals, stats, distraction markers, and editable Dayflow-style standup cards for highlights, tasks, and blockers.
 - Daily standups are stored by day and can be saved or regenerated through the selected provider with fallback.
 - Journal reminders can schedule recurring intention and reflection notifications on selected weekdays, with boot-time rescheduling.

@@ -92,14 +92,14 @@ final class ScreenshotStorage {
                 Cipher cipher = Cipher.getInstance(CIPHER);
                 cipher.init(Cipher.DECRYPT_MODE, screenshotKey(), new GCMParameterSpec(GCM_TAG_BITS, iv));
                 byte[] plain = cipher.doFinal(encrypted);
-                return truncate(plain, maxBytes);
+                return fitJpegBytes(plain, maxBytes);
             } catch (IOException error) {
                 throw error;
             } catch (Exception error) {
                 throw new IOException("Could not decrypt screenshot", error);
             }
         }
-        return readPlain(file, maxBytes);
+        return fitJpegBytes(readAll(file), maxBytes);
     }
 
     static BitmapFactory.Options decodeBounds(String path) throws IOException {
@@ -165,22 +165,6 @@ final class ScreenshotStorage {
         return generator.generateKey();
     }
 
-    private static byte[] readPlain(File file, int maxBytes) throws IOException {
-        FileInputStream in = new FileInputStream(file);
-        try {
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            byte[] buffer = new byte[8192];
-            int limit = maxBytes <= 0 ? Integer.MAX_VALUE : maxBytes;
-            int read;
-            while ((read = in.read(buffer)) != -1 && out.size() < limit) {
-                out.write(buffer, 0, Math.min(read, limit - out.size()));
-            }
-            return out.toByteArray();
-        } finally {
-            in.close();
-        }
-    }
-
     private static byte[] readAll(File file) throws IOException {
         FileInputStream in = new FileInputStream(file);
         try {
@@ -194,10 +178,35 @@ final class ScreenshotStorage {
         }
     }
 
-    private static byte[] truncate(byte[] data, int maxBytes) {
+    private static byte[] fitJpegBytes(byte[] data, int maxBytes) throws IOException {
         if (maxBytes <= 0 || data.length <= maxBytes) return data;
-        byte[] result = new byte[maxBytes];
-        System.arraycopy(data, 0, result, 0, maxBytes);
-        return result;
+
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeByteArray(data, 0, data.length, bounds);
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return data;
+
+        int sample = 1;
+        while (sample <= 8) {
+            BitmapFactory.Options opts = new BitmapFactory.Options();
+            opts.inSampleSize = sample;
+            Bitmap bitmap = BitmapFactory.decodeByteArray(data, 0, data.length, opts);
+            if (bitmap == null) break;
+            try {
+                for (int quality = 82; quality >= 42; quality -= 10) {
+                    ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    if (!bitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)) {
+                        throw new IOException("Could not recompress screenshot JPEG");
+                    }
+                    byte[] candidate = out.toByteArray();
+                    if (candidate.length <= maxBytes || quality == 42 && sample >= 8) return candidate;
+                }
+            } finally {
+                bitmap.recycle();
+            }
+            sample *= 2;
+        }
+
+        return data;
     }
 }
