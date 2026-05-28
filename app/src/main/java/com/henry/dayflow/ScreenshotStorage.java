@@ -11,7 +11,6 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.security.KeyStore;
-import java.security.SecureRandom;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
@@ -23,7 +22,6 @@ final class ScreenshotStorage {
     private static final String KEYSTORE = "AndroidKeyStore";
     private static final String CIPHER = "AES/GCM/NoPadding";
     private static final int GCM_TAG_BITS = 128;
-    private static final int IV_BYTES = 12;
     private static final byte[] MAGIC = new byte[]{'D', 'F', 'S', '1', 0x0A};
 
     private ScreenshotStorage() {}
@@ -34,11 +32,11 @@ final class ScreenshotStorage {
             throw new IOException("Could not encode screenshot JPEG");
         }
         byte[] plain = jpeg.toByteArray();
-        byte[] iv = new byte[IV_BYTES];
-        new SecureRandom().nextBytes(iv);
 
         Cipher cipher = Cipher.getInstance(CIPHER);
-        cipher.init(Cipher.ENCRYPT_MODE, screenshotKey(), new GCMParameterSpec(GCM_TAG_BITS, iv));
+        cipher.init(Cipher.ENCRYPT_MODE, screenshotKey());
+        byte[] iv = cipher.getIV();
+        if (iv == null || iv.length == 0) throw new IOException("Could not create screenshot encryption IV");
         byte[] encrypted = cipher.doFinal(plain);
 
         File parent = file.getParentFile();
