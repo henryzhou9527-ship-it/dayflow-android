@@ -83,6 +83,7 @@ public final class MainActivity extends Activity {
     private TextView statusText;
     private String pendingExportMarkdown;
     private String pendingExportLabel;
+    private boolean pendingCaptureAfterNotification;
 
     @Override
     protected void onCreate(Bundle bundle) {
@@ -94,7 +95,6 @@ public final class MainActivity extends Activity {
         selectedWeekStartMs = TimeUtil.weekStartMs(System.currentTimeMillis());
         if (!prefs.didOnboard()) selectedTab = "Onboarding";
         applyLaunchIntent(getIntent());
-        maybeRequestNotifications();
         buildUi();
         refresh();
     }
@@ -110,17 +110,16 @@ public final class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQ_MEDIA_PROJECTION && resultCode == RESULT_OK && data != null) {
-            Intent service = new Intent(this, CaptureService.class)
-                    .setAction(CaptureService.ACTION_START)
-                    .putExtra(CaptureService.EXTRA_RESULT_CODE, resultCode)
-                    .putExtra(CaptureService.EXTRA_RESULT_DATA, data);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(service);
+        if (requestCode == REQ_MEDIA_PROJECTION) {
+            if (resultCode == RESULT_OK && data != null) {
+                Intent service = new Intent(this, CaptureService.class)
+                        .setAction(CaptureService.ACTION_START)
+                        .putExtra(CaptureService.EXTRA_RESULT_CODE, resultCode)
+                        .putExtra(CaptureService.EXTRA_RESULT_DATA, data);
+                startCaptureService(service);
             } else {
-                startService(service);
+                setStatus("Screen capture permission canceled.");
             }
-            setStatus("Recording started. A full Dayflow card appears after the first analysis batch.");
         }
         if (requestCode == REQ_EXPORT_MARKDOWN) {
             if (resultCode == RESULT_OK && data != null && data.getData() != null && pendingExportMarkdown != null) {
@@ -131,6 +130,27 @@ public final class MainActivity extends Activity {
                 setStatus("Export canceled.");
             }
         }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQ_NOTIFICATIONS) return;
+        boolean granted = hasNotificationPermission()
+                || (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED);
+        if (pendingCaptureAfterNotification) {
+            pendingCaptureAfterNotification = false;
+            if (granted) {
+                setStatus("Notifications enabled. Now approve screen capture.");
+                requestScreenCapture();
+            } else {
+                setStatus("Enable notifications in Android settings before recording.");
+            }
+            return;
+        }
+        setStatus(granted
+                ? "Notifications enabled."
+                : "Notifications are off, so reminders and recording status may be hidden.");
     }
 
     private void buildUi() {
@@ -213,8 +233,10 @@ public final class MainActivity extends Activity {
     private void applyLaunchIntent(Intent intent) {
         if (intent == null) return;
         String tab = intent.getStringExtra(EXTRA_OPEN_TAB);
-        if (TAB_DAILY.equals(tab) || TAB_WEEKLY.equals(tab)) {
+        if (isOpenableTab(tab)) {
             selectedTab = tab;
+        }
+        if (TAB_DAILY.equals(tab) || TAB_WEEKLY.equals(tab)) {
             prefs.setDidOnboard(true);
         }
         String day = intent.getStringExtra(EXTRA_OPEN_DAY);
@@ -223,6 +245,18 @@ public final class MainActivity extends Activity {
         if (weekStart > 0) selectedWeekStartMs = weekStart;
         else selectedWeekStartMs = TimeUtil.weekStartMs(TimeUtil.dayStartMs(selectedDay) + TimeUtil.HOUR);
         if (TAB_DAILY.equals(tab)) prefs.setDailyUnlocked(true);
+    }
+
+    private boolean isOpenableTab(String tab) {
+        return "Onboarding".equals(tab)
+                || "Timeline".equals(tab)
+                || TAB_DAILY.equals(tab)
+                || TAB_WEEKLY.equals(tab)
+                || "Journal".equals(tab)
+                || "Review".equals(tab)
+                || "Chat".equals(tab)
+                || "Categories".equals(tab)
+                || "Settings".equals(tab);
     }
 
     private void refresh() {
@@ -4633,9 +4667,34 @@ public final class MainActivity extends Activity {
     }
 
     private void requestScreenCapture() {
+        if (!hasNotificationPermission()) {
+            pendingCaptureAfterNotification = true;
+            setStatus("Allow notifications so recording can keep its required background status.");
+            maybeRequestNotifications();
+            return;
+        }
         MediaProjectionManager manager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
-        if (manager == null) return;
+        if (manager == null) {
+            setStatus("Screen capture is unavailable on this device.");
+            return;
+        }
         startActivityForResult(manager.createScreenCaptureIntent(), REQ_MEDIA_PROJECTION);
+    }
+
+    private void startCaptureService(Intent service) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(service);
+            } else {
+                startService(service);
+            }
+            setStatus("Recording started. A full Dayflow card appears after the first analysis batch.");
+        } catch (Exception error) {
+            String message = shortText(error.getClass().getSimpleName() + ": " + error.getMessage(), 120);
+            prefs.markCaptureError("Recording could not start: " + message);
+            setStatus("Recording could not start: " + message);
+            refresh();
+        }
     }
 
     private void pauseRecording(long durationMs) {
@@ -4644,10 +4703,12 @@ public final class MainActivity extends Activity {
         refresh();
     }
 
-    private void maybeRequestNotifications() {
-        if (Build.VERSION.SDK_INT >= 33) {
+    private boolean maybeRequestNotifications() {
+        if (Build.VERSION.SDK_INT >= 33 && !hasNotificationPermission()) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATIONS);
+            return true;
         }
+        return false;
     }
 
     private void addTab(final String tab) {

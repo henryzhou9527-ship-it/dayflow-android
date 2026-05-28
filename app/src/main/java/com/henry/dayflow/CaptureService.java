@@ -107,7 +107,14 @@ public final class CaptureService extends Service {
             return START_NOT_STICKY;
         }
 
-        startForegroundCompat();
+        try {
+            startForegroundCompat();
+        } catch (Exception error) {
+            prefs.markCaptureError("Foreground service could not start: "
+                    + shortText(error.getClass().getSimpleName() + ": " + error.getMessage(), 120));
+            stopSelf();
+            return START_NOT_STICKY;
+        }
 
         if (intent != null && ACTION_START.equals(intent.getAction())) {
             int resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0);
@@ -394,6 +401,14 @@ public final class CaptureService extends Service {
     }
 
     private Notification buildNotification() {
+        Intent openIntent = new Intent(this, MainActivity.class)
+                .putExtra(MainActivity.EXTRA_OPEN_TAB, "Settings");
+        PendingIntent openPendingIntent = PendingIntent.getActivity(
+                this,
+                11,
+                openIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
         Intent stopIntent = new Intent(this, CaptureService.class).setAction(ACTION_STOP);
         PendingIntent stopPendingIntent = PendingIntent.getService(
                 this,
@@ -408,7 +423,9 @@ public final class CaptureService extends Service {
                 .setSmallIcon(android.R.drawable.presence_online)
                 .setContentTitle(getString(R.string.capture_notification_title))
                 .setContentText(captureNotificationText())
+                .setContentIntent(openPendingIntent)
                 .setOngoing(true)
+                .setOnlyAlertOnce(true)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent)
                 .build();
     }
