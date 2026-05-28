@@ -657,7 +657,7 @@ public final class MainActivity extends Activity {
 
         Button usage = pillButton(appReader.hasUsageAccess() ? "Open Usage Access settings" : "Enable Usage Access");
         usage.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { startActivity(appReader.usageAccessIntent()); }
+            @Override public void onClick(View view) { openSystemPage(appReader.usageAccessIntent(), "Opening Usage Access settings..."); }
         });
         panel.addView(usage, new LinearLayout.LayoutParams(-1, dp(44)));
 
@@ -665,7 +665,7 @@ public final class MainActivity extends Activity {
         accessibility.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
                 prefs.setCaptureAccessibilityContext(true);
-                startActivity(AccessibilityContextService.settingsIntent());
+                openSystemPage(AccessibilityContextService.settingsIntent(), "Opening Accessibility settings...");
             }
         });
         panel.addView(accessibility, new LinearLayout.LayoutParams(-1, dp(42)));
@@ -1044,7 +1044,7 @@ public final class MainActivity extends Activity {
         LinearLayout actions = row();
         Button usage = smallButton(appReader.hasUsageAccess() ? "Usage ready" : "Usage Access");
         usage.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { startActivity(appReader.usageAccessIntent()); }
+            @Override public void onClick(View view) { openSystemPage(appReader.usageAccessIntent(), "Opening Usage Access settings..."); }
         });
         Button capture = smallButton("Start capture");
         capture.setOnClickListener(new View.OnClickListener() {
@@ -2354,7 +2354,7 @@ public final class MainActivity extends Activity {
 
         Button usage = pillButton(appReader.hasUsageAccess() ? "Usage access enabled" : "Open usage access");
         usage.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { startActivity(appReader.usageAccessIntent()); }
+            @Override public void onClick(View view) { openSystemPage(appReader.usageAccessIntent(), "Opening Usage Access settings..."); }
         });
         panel.addView(usage, new LinearLayout.LayoutParams(-1, dp(44)));
 
@@ -2654,13 +2654,13 @@ public final class MainActivity extends Activity {
         panel.addView(text("Permissions", 13, Colors.MUTED, true));
         Button usage = pillButton(appReader.hasUsageAccess() ? "Usage access enabled" : "Open usage access");
         usage.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { startActivity(appReader.usageAccessIntent()); }
+            @Override public void onClick(View view) { openSystemPage(appReader.usageAccessIntent(), "Opening Usage Access settings..."); }
         });
         panel.addView(usage, new LinearLayout.LayoutParams(-1, dp(44)));
 
         Button accessibility = smallButton(AccessibilityContextService.isEnabled(this) ? "Accessibility context enabled" : "Open accessibility settings");
         accessibility.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { startActivity(AccessibilityContextService.settingsIntent()); }
+            @Override public void onClick(View view) { openSystemPage(AccessibilityContextService.settingsIntent(), "Opening Accessibility settings..."); }
         });
         panel.addView(accessibility, new LinearLayout.LayoutParams(-1, dp(42)));
 
@@ -2796,7 +2796,7 @@ public final class MainActivity extends Activity {
         panel.addView(windowContext);
         Button accessibility = smallButton("Open Android accessibility settings");
         accessibility.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { startActivity(AccessibilityContextService.settingsIntent()); }
+            @Override public void onClick(View view) { openSystemPage(AccessibilityContextService.settingsIntent(), "Opening Accessibility settings..."); }
         });
         panel.addView(accessibility, new LinearLayout.LayoutParams(-1, dp(42)));
 
@@ -4899,6 +4899,15 @@ public final class MainActivity extends Activity {
     private void addGap(int dp) {
         Space s = new Space(this);
         content.addView(s, new LinearLayout.LayoutParams(1, dp(dp)));
+    }
+
+    private void openSystemPage(Intent intent, String status) {
+        setStatus(status);
+        try {
+            startActivity(intent);
+        } catch (Exception error) {
+            setStatus("Could not open system settings: " + shortText(error.getMessage(), 80));
+        }
     }
 
     private void setStatus(String status) {
