@@ -12,11 +12,11 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Verifies encrypted screenshot storage before starting capture and exposes a manual storage test in Settings.
 - Builds 15-minute analysis batches and rewrites cards with a 45-minute lookback window.
 - Skips AI calls for long launcher/lock-screen idle batches and writes an Idle card directly, matching Dayflow's lightweight idle shortcut behavior.
-- Supports Custom API endpoints with OpenAI-compatible chat completions, Gemini vision analysis, heuristic fallback, and Ollama vision models such as `qwen3-vl:4b`.
+- Supports Custom API endpoints with OpenAI-compatible chat completions, including base URLs or full `/chat/completions` URLs, Gemini vision analysis, heuristic fallback, and Ollama vision models such as `qwen3-vl:4b`.
 - Chat uses saved timeline cards, journal notes, category totals, and recent chat history, then answers through Custom API, Gemini, or Ollama when configured.
 - Chat renders Dayflow-style user/assistant bubbles, context chips, suggested prompts, markdown blocks, code blocks, copy actions, and lightweight feedback controls.
 - Provider settings include a backup provider so timeline analysis and chat can retry through another route before falling back locally.
-- Provider setup includes Android-native connection tests for Custom API, Gemini, and Ollama; the Custom API test sends a tiny vision payload so the selected endpoint proves it can read screenshots before timeline analysis depends on it.
+- Provider setup includes Android-native connection tests for Custom API, Gemini, and Ollama; the Custom API test sends a tiny vision payload and reports compact provider errors so the selected endpoint proves it can read screenshots before timeline analysis depends on it.
 - Local diagnostics record provider attempts, fallback paths, batch decisions, errors, latency, and recent timeline state, with a copyable report in Settings and a dismissible in-app notice when analysis needs attention.
 - AI timeline parsing accepts plain JSON arrays, fenced JSON, and common `{ "cards": [...] }` wrappers so Custom API and local model outputs are less brittle.
 - Settings are organized into Dayflow-like Profile, Storage, Privacy, Providers, Export, and Other sections.
