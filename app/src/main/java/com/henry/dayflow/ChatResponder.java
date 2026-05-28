@@ -98,8 +98,7 @@ final class ChatResponder {
         prefs.saveAnalysisNotice(
                 "warning",
                 "AI provider failed, so Dayflow used the local fallback for this result. "
-                        + result.firstError.getClass().getSimpleName() + ": "
-                        + shortText(result.firstError.getMessage(), 140),
+                        + ProviderErrorFormatter.describe(result.provider, result.firstError),
                 operation,
                 result.provider,
                 sameProvider(prefs.provider(), prefs.backupProvider()) ? "" : resolvedProvider(prefs.backupProvider()),

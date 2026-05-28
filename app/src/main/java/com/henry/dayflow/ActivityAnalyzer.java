@@ -141,7 +141,7 @@ final class HybridActivityAnalyzer implements ActivityAnalyzer {
     private void saveAnalysisNotice(String severity, String message, String operation, String provider, String backupProvider, long batchId, Exception error) {
         String detail = error == null || error.getMessage() == null || error.getMessage().trim().isEmpty()
                 ? message
-                : message + " " + error.getClass().getSimpleName() + ": " + shortText(error.getMessage(), 140);
+                : message + " " + ProviderErrorFormatter.describe(provider, error);
         prefs.saveAnalysisNotice(severity, detail, operation, provider, backupProvider, batchId);
     }
 

@@ -172,7 +172,7 @@ public final class MainActivity extends Activity {
         titleStack.setOrientation(LinearLayout.VERTICAL);
         titleStack.setPadding(dp(10), 0, 0, 0);
         header.addView(titleStack, new LinearLayout.LayoutParams(0, -1, 1));
-        TextView title = text("Dayflow", 34, Colors.TEXT, true);
+        TextView title = text("Dayflow", 32, Colors.TEXT, true);
         titleStack.addView(title);
         title.setTypeface(DayflowType.serif(this));
         statusText = text("Private timeline ready.", 12, Colors.MUTED, false);
@@ -182,13 +182,16 @@ public final class MainActivity extends Activity {
         start.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) { requestScreenCapture(); }
         });
-        header.addView(start, new LinearLayout.LayoutParams(dp(86), dp(42)));
+        header.addView(start, new LinearLayout.LayoutParams(dp(78), dp(42)));
 
         Button stop = iconButton("■");
         stop.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
                 startService(new Intent(MainActivity.this, CaptureService.class).setAction(CaptureService.ACTION_STOP));
                 setStatus("Recording stopped.");
+                statusText.postDelayed(new Runnable() {
+                    @Override public void run() { refresh(); }
+                }, 500);
             }
         });
         header.addView(stop, new LinearLayout.LayoutParams(dp(42), dp(42)));
@@ -298,7 +301,7 @@ public final class MainActivity extends Activity {
                 ? (error ? "Analysis needs attention" : "Analysis used fallback")
                 : (error ? "Provider needs attention" : "Provider used fallback");
         panel.addView(text(noticeTitle, 13, error ? Colors.DISTRACTION : Colors.ACCENT, true));
-        panel.addView(text(notice.message, 14, Colors.TEXT, false));
+        panel.addView(text(displayAnalysisNoticeMessage(notice), 14, Colors.TEXT, false));
         String meta = TimeUtil.timeLabel(notice.createdAtMs)
                 + (notice.batchId > 0 ? " · batch " + notice.batchId : "")
                 + (notice.provider == null || notice.provider.trim().isEmpty() ? "" : " · " + notice.provider)
@@ -306,10 +309,11 @@ public final class MainActivity extends Activity {
         panel.addView(text(meta, 12, Colors.MUTED, false));
 
         LinearLayout actions = row();
-        Button details = pillButton("Open diagnostics");
+        final boolean providerAction = isExternalProviderName(notice.provider);
+        Button details = pillButton(providerAction ? "Fix provider" : "Open diagnostics");
         details.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                prefs.setSettingsSection("Other");
+                prefs.setSettingsSection(providerAction ? "Providers" : "Other");
                 selectedTab = "Settings";
                 refresh();
             }
@@ -327,6 +331,66 @@ public final class MainActivity extends Activity {
         panel.addView(actions);
         content.addView(panel);
         addGap(8);
+    }
+
+    private String displayAnalysisNoticeMessage(AnalysisNotice notice) {
+        String message = notice == null || notice.message == null ? "" : notice.message.trim();
+        if (message.isEmpty()) return "";
+        if (message.contains("Custom API service is unavailable")
+                || message.contains("Custom API timed out")
+                || message.contains("Custom API rejected")
+                || message.contains("Custom API could not find")
+                || message.contains("Custom API answered")) {
+            return message;
+        }
+        String provider = notice == null ? "" : notice.provider;
+        if (!isCustomProvider(provider)) return message;
+        String errorText = extractLegacyProviderError(message);
+        if (errorText.isEmpty()) return message;
+        int prefixEnd = message.length() - errorText.length();
+        String prefix = prefixEnd > 0 ? message.substring(0, prefixEnd).trim() : "";
+        if (prefix.endsWith("IllegalStateException:")
+                || prefix.endsWith("SocketTimeoutException:")
+                || prefix.endsWith("IOException:")
+                || prefix.endsWith("UnknownHostException:")) {
+            int lastSpace = prefix.lastIndexOf(' ');
+            prefix = lastSpace > 0 ? prefix.substring(0, lastSpace).trim() : "";
+        }
+        String friendly = ProviderErrorFormatter.describe(provider, new IllegalStateException(errorText));
+        return prefix.isEmpty() ? friendly : prefix + " " + friendly;
+    }
+
+    private static String extractLegacyProviderError(String message) {
+        String[] markers = {
+                "IllegalStateException:",
+                "SocketTimeoutException:",
+                "IOException:",
+                "UnknownHostException:"
+        };
+        int best = -1;
+        String bestMarker = "";
+        for (String marker : markers) {
+            int index = message.indexOf(marker);
+            if (index >= 0 && (best < 0 || index < best)) {
+                best = index;
+                bestMarker = marker;
+            }
+        }
+        if (best >= 0) return message.substring(best + bestMarker.length()).trim();
+        String lower = message.toLowerCase(Locale.US);
+        if (lower.contains("http 5") || lower.contains("http 4") || lower.contains("timeout") || lower.contains("暂不可用")) {
+            return message;
+        }
+        return "";
+    }
+
+    private static boolean isExternalProviderName(String provider) {
+        String value = provider == null ? "" : provider.trim().toLowerCase(Locale.US);
+        return value.contains("custom")
+                || value.contains("openai")
+                || value.contains("compatible")
+                || value.contains("gemini")
+                || value.contains("ollama");
     }
 
     private void addCaptureHealthNoticeIfNeeded() {
@@ -2553,7 +2617,7 @@ public final class MainActivity extends Activity {
                     refresh();
                 }
             });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(112), dp(40));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(96), dp(40));
             lp.setMargins(0, 0, dp(8), 0);
             row.addView(button, lp);
         }
@@ -2917,7 +2981,7 @@ public final class MainActivity extends Activity {
                 } catch (final Exception error) {
                     runOnUiThread(new Runnable() {
                         @Override public void run() {
-                            setStatus("Provider test failed: " + shortText(error.getMessage(), 90));
+                            setStatus("Provider test failed: " + shortText(ProviderErrorFormatter.describe(provider, error), 120));
                         }
                     });
                 }
@@ -4685,6 +4749,7 @@ public final class MainActivity extends Activity {
             setStatus("Screen capture is unavailable on this device.");
             return;
         }
+        setStatus("Choose Share entire screen in the Android prompt, then tap Share screen.");
         startActivityForResult(manager.createScreenCaptureIntent(), REQ_MEDIA_PROJECTION);
     }
 
@@ -4721,9 +4786,13 @@ public final class MainActivity extends Activity {
     private void addTab(final String tab) {
         Button button = smallButton(tab);
         button.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { selectedTab = tab; refresh(); }
+            @Override public void onClick(View view) {
+                selectedTab = tab;
+                setStatus("Opened " + tab + ".");
+                refresh();
+            }
         });
-        tabRow.addView(button, new LinearLayout.LayoutParams(dp(112), dp(40)));
+        tabRow.addView(button, new LinearLayout.LayoutParams(dp(88), dp(40)));
     }
 
     private void renderTabs() {
@@ -4731,6 +4800,7 @@ public final class MainActivity extends Activity {
             View child = tabRow.getChildAt(i);
             if (child instanceof Button) {
                 Button b = (Button) child;
+                styleButton(b, selectedTab.contentEquals(b.getText()));
                 b.setTextColor(selectedTab.contentEquals(b.getText()) ? Colors.ACCENT : Colors.TEXT);
             }
         }
@@ -4780,9 +4850,8 @@ public final class MainActivity extends Activity {
         button.setText(label);
         button.setAllCaps(false);
         button.setTextColor(Colors.TEXT);
-        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{Colors.ACCENT_SOFT, 0xffe2c2ff});
-        bg.setCornerRadius(dp(24));
-        button.setBackground(bg);
+        prepareButton(button);
+        styleButton(button, true);
         return button;
     }
 
@@ -4791,12 +4860,34 @@ public final class MainActivity extends Activity {
         button.setText(label);
         button.setAllCaps(false);
         button.setTextColor(Colors.TEXT);
+        prepareButton(button);
+        styleButton(button, false);
+        return button;
+    }
+
+    private void prepareButton(Button button) {
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
+        button.setMinWidth(0);
+        button.setMinimumWidth(0);
+        button.setPadding(dp(6), 0, dp(6), 0);
+        button.setSingleLine(false);
+        button.setGravity(Gravity.CENTER);
+        button.setIncludeFontPadding(false);
+    }
+
+    private void styleButton(Button button, boolean active) {
+        if (active) {
+            GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{Colors.ACCENT_SOFT, 0xffe2c2ff});
+            bg.setCornerRadius(dp(24));
+            button.setBackground(bg);
+            return;
+        }
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(Colors.CARD_ALT);
         bg.setStroke(1, Colors.STROKE);
         bg.setCornerRadius(dp(20));
         button.setBackground(bg);
-        return button;
     }
 
     private Button iconButton(String label) {

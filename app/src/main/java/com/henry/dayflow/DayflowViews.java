@@ -591,12 +591,9 @@ final class TimelineCanvasView extends View {
             return;
         }
 
-        for (TimelineCard card : cards) {
-            float top = ((card.startMs - start) / (float) TimeUtil.HOUR) * hourH;
-            float bottom = ((card.endMs - start) / (float) TimeUtil.HOUR) * hourH;
-            top = Math.max(0, top);
-            bottom = Math.max(top + dp(28), bottom);
-            RectF r = new RectF(labelW + dp(6), top + dp(3), getWidth() - dp(10), bottom - dp(3));
+        for (TimelineLayout layout : layoutCards(start, hourH, labelW)) {
+            TimelineCard card = layout.card;
+            RectF r = layout.rect;
             paint.setColor(ColorUtils.withAlpha(Colors.colorForCategory(card.category), 58));
             canvas.drawRoundRect(r, dp(12), dp(12), paint);
             paint.setStyle(Paint.Style.STROKE);
@@ -604,10 +601,69 @@ final class TimelineCanvasView extends View {
             paint.setColor(ColorUtils.withAlpha(Colors.colorForCategory(card.category), 160));
             canvas.drawRoundRect(r, dp(12), dp(12), paint);
             paint.setStyle(Paint.Style.FILL);
-            drawSans(canvas, card.title, r.left + dp(12), r.top + dp(22), dp(14), Colors.TEXT);
+
+            canvas.save();
+            canvas.clipRect(r.left + dp(6), r.top, r.right - dp(6), r.bottom);
+            drawSans(canvas, fitText(card.title, r.width() - dp(24), dp(14)), r.left + dp(12), r.top + dp(22), dp(14), Colors.TEXT);
             if (r.height() > dp(54)) {
-                drawSans(canvas, TimeUtil.shortDuration(card.durationMs()) + " · " + card.category, r.left + dp(12), r.top + dp(42), dp(11), Colors.MUTED);
+                drawSans(canvas, fitText(TimeUtil.shortDuration(card.durationMs()) + " · " + card.category, r.width() - dp(24), dp(11)), r.left + dp(12), r.top + dp(42), dp(11), Colors.MUTED);
             }
+            canvas.restore();
+        }
+    }
+
+    private List<TimelineLayout> layoutCards(long start, float hourH, float labelW) {
+        List<TimelineCard> sorted = new ArrayList<>(cards);
+        Collections.sort(sorted, new Comparator<TimelineCard>() {
+            @Override public int compare(TimelineCard a, TimelineCard b) {
+                int startCompare = Long.compare(a.startMs, b.startMs);
+                if (startCompare != 0) return startCompare;
+                return Long.compare(a.endMs, b.endMs);
+            }
+        });
+
+        List<TimelineLayout> layouts = new ArrayList<>();
+        float minHeight = dp(28);
+        float gap = dp(4);
+        float bottomLimit = 24f * hourH - dp(2);
+        float lastBottom = -gap;
+        for (TimelineCard card : sorted) {
+            float rawTop = ((card.startMs - start) / (float) TimeUtil.HOUR) * hourH;
+            float rawBottom = ((card.endMs - start) / (float) TimeUtil.HOUR) * hourH;
+            float top = Math.max(0, rawTop);
+            float bottom = Math.max(top + minHeight, rawBottom);
+            if (top < lastBottom + gap) {
+                top = lastBottom + gap;
+                bottom = Math.max(top + minHeight, rawBottom);
+            }
+            bottom = Math.min(bottomLimit, bottom);
+            if (bottom - top < dp(18)) continue;
+            RectF rect = new RectF(labelW + dp(6), top + dp(3), getWidth() - dp(10), bottom - dp(3));
+            if (rect.height() < dp(16) || rect.bottom <= 0 || rect.top >= bottomLimit) continue;
+            layouts.add(new TimelineLayout(card, rect));
+            lastBottom = rect.bottom;
+        }
+        return layouts;
+    }
+
+    private String fitText(String raw, float maxWidth, float textSize) {
+        String value = raw == null || raw.trim().isEmpty() ? "Untitled" : raw.trim();
+        paint.setTypeface(DayflowType.sans(getContext(), false));
+        paint.setTextSize(textSize);
+        if (paint.measureText(value) <= maxWidth) return value;
+        String suffix = "...";
+        int end = value.length();
+        while (end > 1 && paint.measureText(value.substring(0, end) + suffix) > maxWidth) end--;
+        return value.substring(0, Math.max(1, end)) + suffix;
+    }
+
+    private static final class TimelineLayout {
+        final TimelineCard card;
+        final RectF rect;
+
+        TimelineLayout(TimelineCard card, RectF rect) {
+            this.card = card;
+            this.rect = rect;
         }
     }
 
