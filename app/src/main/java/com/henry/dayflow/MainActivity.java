@@ -69,6 +69,7 @@ public final class MainActivity extends Activity {
     private static final String[] CATEGORY_COLOR_PRESETS = {
             "#B984FF", "#6AADFF", "#FFAE8C", "#FF5950", "#42D0BB", "#F96E00", "#90DDF0", "#A0AEC0"
     };
+    private static final String[] PROVIDER_OPTIONS = {"Custom API", "Gemini", "Ollama", "Heuristic"};
 
     private DayflowDatabase db;
     private DayflowPrefs prefs;
@@ -456,8 +457,7 @@ public final class MainActivity extends Activity {
         panel.addView(serif("Connect the provider", 28, Colors.TEXT));
         panel.addView(text("Save the model details now. Custom API works with OpenAI-compatible chat completion endpoints and can power screenshot analysis, chat, Daily, and Journal.", 14, Colors.MUTED, false));
 
-        final EditText provider = field("Provider: Custom API, Gemini, Ollama, or Heuristic", prefs.provider(), true);
-        final EditText backupProvider = field("Backup provider", prefs.backupProvider(), true);
+        final ProviderSelection providerSelection = addProviderSelector(panel, prefs.provider(), prefs.backupProvider());
         final EditText customEndpoint = field("Custom API endpoint", prefs.customApiEndpoint(), true);
         final EditText customKey = secretField("Custom API key", prefs.customApiKey());
         final EditText customModel = field("Custom API model", prefs.customApiModel(), true);
@@ -465,8 +465,6 @@ public final class MainActivity extends Activity {
         final EditText model = field("Gemini model", prefs.geminiModel(), true);
         final EditText ollama = field("Ollama endpoint", prefs.ollamaEndpoint(), true);
         final EditText ollamaModel = field("Ollama vision model", prefs.ollamaModel(), true);
-        panel.addView(provider, new LinearLayout.LayoutParams(-1, dp(54)));
-        panel.addView(backupProvider, new LinearLayout.LayoutParams(-1, dp(54)));
         panel.addView(customEndpoint, new LinearLayout.LayoutParams(-1, dp(54)));
         panel.addView(customKey, new LinearLayout.LayoutParams(-1, dp(54)));
         panel.addView(customModel, new LinearLayout.LayoutParams(-1, dp(54)));
@@ -475,34 +473,11 @@ public final class MainActivity extends Activity {
         panel.addView(ollama, new LinearLayout.LayoutParams(-1, dp(54)));
         panel.addView(ollamaModel, new LinearLayout.LayoutParams(-1, dp(54)));
 
-        LinearLayout quick = row();
-        Button custom = smallButton("Custom");
-        custom.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { provider.setText("Custom API"); }
-        });
-        Button gemini = smallButton("Gemini");
-        gemini.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { provider.setText("Gemini"); }
-        });
-        Button local = smallButton("Ollama");
-        local.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { provider.setText("Ollama"); }
-        });
-        Button heuristic = smallButton("Heuristic");
-        heuristic.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { provider.setText("Heuristic"); }
-        });
-        quick.addView(custom, new LinearLayout.LayoutParams(0, dp(40), 1));
-        quick.addView(gemini, new LinearLayout.LayoutParams(0, dp(40), 1));
-        quick.addView(local, new LinearLayout.LayoutParams(0, dp(40), 1));
-        quick.addView(heuristic, new LinearLayout.LayoutParams(0, dp(40), 1));
-        panel.addView(quick);
-
         Button test = smallButton("Test selected provider");
         test.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                saveProviderFields(provider, backupProvider, customEndpoint, customKey, customModel, apiKey, model, ollama, ollamaModel);
-                testSelectedProvider(provider.getText().toString(), customEndpoint.getText().toString(), customKey.getText().toString(), customModel.getText().toString(), apiKey.getText().toString(), model.getText().toString(), ollama.getText().toString(), ollamaModel.getText().toString());
+                saveProviderFields(providerSelection, customEndpoint, customKey, customModel, apiKey, model, ollama, ollamaModel);
+                testSelectedProvider(providerSelection.primary, customEndpoint.getText().toString(), customKey.getText().toString(), customModel.getText().toString(), apiKey.getText().toString(), model.getText().toString(), ollama.getText().toString(), ollamaModel.getText().toString());
             }
         });
         panel.addView(test, new LinearLayout.LayoutParams(-1, dp(42)));
@@ -515,7 +490,7 @@ public final class MainActivity extends Activity {
         Button save = pillButton("Save and continue");
         save.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                saveProviderFields(provider, backupProvider, customEndpoint, customKey, customModel, apiKey, model, ollama, ollamaModel);
+                saveProviderFields(providerSelection, customEndpoint, customKey, customModel, apiKey, model, ollama, ollamaModel);
                 goOnboarding(5);
             }
         });
@@ -2378,11 +2353,7 @@ public final class MainActivity extends Activity {
         panel.addView(deleteDay, new LinearLayout.LayoutParams(-1, dp(44)));
 
         panel.addView(text("AI provider", 13, Colors.MUTED, true));
-        final EditText provider = field("Provider: Custom API, Heuristic, Gemini, or Ollama", prefs.provider(), true);
-        panel.addView(provider, new LinearLayout.LayoutParams(-1, dp(54)));
-
-        final EditText backupProvider = field("Backup provider", prefs.backupProvider(), true);
-        panel.addView(backupProvider, new LinearLayout.LayoutParams(-1, dp(54)));
+        final ProviderSelection providerSelection = addProviderSelector(panel, prefs.provider(), prefs.backupProvider());
 
         final Switch cloud = new Switch(this);
         cloud.setText("Use Gemini when API key is set");
@@ -2392,7 +2363,7 @@ public final class MainActivity extends Activity {
         cloud.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                 prefs.setCloudAnalyzer(isChecked);
-                if (isChecked) provider.setText("Gemini");
+                if (isChecked) providerSelection.primary = "Gemini";
             }
         });
         panel.addView(cloud);
@@ -2423,7 +2394,7 @@ public final class MainActivity extends Activity {
         Button useCustom = smallButton("Use Custom API");
         useCustom.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                provider.setText("Custom API");
+                providerSelection.primary = "Custom API";
                 prefs.setProvider("Custom API");
                 prefs.setCustomApiEndpoint(customEndpoint.getText().toString());
                 prefs.setCustomApiKey(customKey.getText().toString());
@@ -2436,7 +2407,7 @@ public final class MainActivity extends Activity {
         Button useOllama = smallButton("Use Ollama");
         useOllama.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                provider.setText("Ollama");
+                providerSelection.primary = "Ollama";
                 prefs.setProvider("Ollama");
                 prefs.setOllamaEndpoint(ollama.getText().toString());
                 prefs.setOllamaModel(ollamaModel.getText().toString());
@@ -2448,8 +2419,8 @@ public final class MainActivity extends Activity {
         Button save = pillButton("Save provider settings");
         save.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                prefs.setProvider(provider.getText().toString());
-                prefs.setBackupProvider(backupProvider.getText().toString());
+                prefs.setProvider(providerSelection.primary);
+                prefs.setBackupProvider(providerSelection.backup);
                 prefs.setCustomApiEndpoint(customEndpoint.getText().toString());
                 prefs.setCustomApiKey(customKey.getText().toString());
                 prefs.setCustomApiModel(customModel.getText().toString());
@@ -2832,8 +2803,7 @@ public final class MainActivity extends Activity {
         panel.addView(text("Providers", 13, Colors.MUTED, true));
         panel.addView(text("Primary: " + prefs.provider() + "\nBackup: " + prefs.backupProvider(), 14, Colors.TEXT, false));
         panel.addView(text("Custom API supports OpenAI-compatible chat completion endpoints for timeline vision, chat, Daily, and Journal.", 14, Colors.MUTED, false));
-        final EditText provider = field("Provider: Custom API, Heuristic, Gemini, or Ollama", prefs.provider(), true);
-        final EditText backupProvider = field("Backup provider", prefs.backupProvider(), true);
+        final ProviderSelection providerSelection = addProviderSelector(panel, prefs.provider(), prefs.backupProvider());
         final EditText customEndpoint = field("Custom API endpoint", prefs.customApiEndpoint(), true);
         final EditText customKey = secretField("Custom API key", prefs.customApiKey());
         final EditText customModel = field("Custom API model", prefs.customApiModel(), true);
@@ -2841,8 +2811,6 @@ public final class MainActivity extends Activity {
         final EditText model = field("Gemini model", prefs.geminiModel(), true);
         final EditText ollama = field("Ollama endpoint", prefs.ollamaEndpoint(), true);
         final EditText ollamaModel = field("Ollama vision model", prefs.ollamaModel(), true);
-        panel.addView(provider, new LinearLayout.LayoutParams(-1, dp(54)));
-        panel.addView(backupProvider, new LinearLayout.LayoutParams(-1, dp(54)));
         panel.addView(customEndpoint, new LinearLayout.LayoutParams(-1, dp(56)));
         panel.addView(customKey, new LinearLayout.LayoutParams(-1, dp(56)));
         panel.addView(customModel, new LinearLayout.LayoutParams(-1, dp(56)));
@@ -2851,35 +2819,12 @@ public final class MainActivity extends Activity {
         panel.addView(ollama, new LinearLayout.LayoutParams(-1, dp(56)));
         panel.addView(ollamaModel, new LinearLayout.LayoutParams(-1, dp(56)));
 
-        LinearLayout quick = row();
-        Button custom = smallButton("Custom");
-        custom.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { provider.setText("Custom API"); }
-        });
-        Button heuristic = smallButton("Heuristic");
-        heuristic.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { provider.setText("Heuristic"); }
-        });
-        Button gemini = smallButton("Gemini");
-        gemini.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { provider.setText("Gemini"); }
-        });
-        Button local = smallButton("Ollama");
-        local.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { provider.setText("Ollama"); }
-        });
-        quick.addView(custom, new LinearLayout.LayoutParams(0, dp(40), 1));
-        quick.addView(heuristic, new LinearLayout.LayoutParams(0, dp(40), 1));
-        quick.addView(gemini, new LinearLayout.LayoutParams(0, dp(40), 1));
-        quick.addView(local, new LinearLayout.LayoutParams(0, dp(40), 1));
-        panel.addView(quick);
-
         panel.addView(text("Connection health", 13, Colors.MUTED, true));
         Button test = smallButton("Test selected provider");
         test.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                saveProviderFields(provider, backupProvider, customEndpoint, customKey, customModel, apiKey, model, ollama, ollamaModel);
-                testSelectedProvider(provider.getText().toString(), customEndpoint.getText().toString(), customKey.getText().toString(), customModel.getText().toString(), apiKey.getText().toString(), model.getText().toString(), ollama.getText().toString(), ollamaModel.getText().toString());
+                saveProviderFields(providerSelection, customEndpoint, customKey, customModel, apiKey, model, ollama, ollamaModel);
+                testSelectedProvider(providerSelection.primary, customEndpoint.getText().toString(), customKey.getText().toString(), customModel.getText().toString(), apiKey.getText().toString(), model.getText().toString(), ollama.getText().toString(), ollamaModel.getText().toString());
             }
         });
         panel.addView(test, new LinearLayout.LayoutParams(-1, dp(42)));
@@ -2887,7 +2832,7 @@ public final class MainActivity extends Activity {
         Button save = pillButton("Save provider settings");
         save.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                saveProviderFields(provider, backupProvider, customEndpoint, customKey, customModel, apiKey, model, ollama, ollamaModel);
+                saveProviderFields(providerSelection, customEndpoint, customKey, customModel, apiKey, model, ollama, ollamaModel);
                 setStatus("Provider settings saved.");
                 refresh();
             }
@@ -2895,9 +2840,9 @@ public final class MainActivity extends Activity {
         panel.addView(save, new LinearLayout.LayoutParams(-1, dp(44)));
     }
 
-    private void saveProviderFields(EditText provider, EditText backupProvider, EditText customEndpoint, EditText customKey, EditText customModel, EditText apiKey, EditText model, EditText ollama, EditText ollamaModel) {
-        prefs.setProvider(provider.getText().toString());
-        prefs.setBackupProvider(backupProvider.getText().toString());
+    private void saveProviderFields(ProviderSelection providerSelection, EditText customEndpoint, EditText customKey, EditText customModel, EditText apiKey, EditText model, EditText ollama, EditText ollamaModel) {
+        prefs.setProvider(providerSelection.primary);
+        prefs.setBackupProvider(providerSelection.backup);
         prefs.setCustomApiEndpoint(customEndpoint.getText().toString());
         prefs.setCustomApiKey(customKey.getText().toString());
         prefs.setCustomApiModel(customModel.getText().toString());
@@ -3275,6 +3220,67 @@ public final class MainActivity extends Activity {
         return day;
     }
 
+    private ProviderSelection addProviderSelector(LinearLayout panel, String primary, String backup) {
+        ProviderSelection selection = new ProviderSelection(normalizeProviderName(primary), normalizeProviderName(backup));
+        panel.addView(text("Primary provider", 12, Colors.MUTED, true));
+        panel.addView(providerOptionRow(selection, true));
+        panel.addView(text("Backup provider", 12, Colors.MUTED, true));
+        panel.addView(providerOptionRow(selection, false));
+        return selection;
+    }
+
+    private LinearLayout providerOptionRow(final ProviderSelection selection, final boolean primary) {
+        final Button[] buttons = new Button[PROVIDER_OPTIONS.length];
+        LinearLayout row = row();
+        for (int i = 0; i < PROVIDER_OPTIONS.length; i++) {
+            final String option = PROVIDER_OPTIONS[i];
+            Button button = smallButton(providerOptionLabel(option));
+            button.setTextSize(12);
+            button.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View view) {
+                    if (primary) selection.primary = option;
+                    else selection.backup = option;
+                    updateProviderOptionButtons(buttons, primary ? selection.primary : selection.backup);
+                }
+            });
+            buttons[i] = button;
+            row.addView(button, new LinearLayout.LayoutParams(0, dp(40), 1));
+        }
+        updateProviderOptionButtons(buttons, primary ? selection.primary : selection.backup);
+        return row;
+    }
+
+    private void updateProviderOptionButtons(Button[] buttons, String selected) {
+        String normalized = normalizeProviderName(selected);
+        for (int i = 0; i < buttons.length; i++) {
+            boolean active = PROVIDER_OPTIONS[i].equalsIgnoreCase(normalized);
+            GradientDrawable bg = active
+                    ? new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{Colors.ACCENT_SOFT, 0xffe2c2ff})
+                    : new GradientDrawable();
+            if (!active) {
+                bg.setColor(Colors.CARD_ALT);
+                bg.setStroke(1, Colors.STROKE);
+            }
+            bg.setCornerRadius(dp(20));
+            buttons[i].setBackground(bg);
+            buttons[i].setTextColor(active ? Colors.TEXT : Colors.MUTED);
+        }
+    }
+
+    private static String providerOptionLabel(String provider) {
+        if ("Custom API".equalsIgnoreCase(provider)) return "Custom";
+        if ("Heuristic".equalsIgnoreCase(provider)) return "Local";
+        return provider;
+    }
+
+    private static String normalizeProviderName(String provider) {
+        String value = provider == null ? "" : provider.trim().toLowerCase(Locale.US);
+        if (value.contains("custom") || value.contains("openai") || "api".equals(value)) return "Custom API";
+        if (value.contains("gemini") || value.contains("google")) return "Gemini";
+        if (value.contains("ollama")) return "Ollama";
+        return "Heuristic";
+    }
+
     private Button providerChoiceButton(String label, final String providerName, final int nextStep) {
         Button button = providerName.equalsIgnoreCase(prefs.provider()) ? pillButton(label) : smallButton(label);
         button.setOnClickListener(new View.OnClickListener() {
@@ -3293,6 +3299,16 @@ public final class MainActivity extends Activity {
             @Override public void onClick(View view) { goOnboarding(step); }
         });
         panel.addView(back, new LinearLayout.LayoutParams(-1, dp(42)));
+    }
+
+    private static final class ProviderSelection {
+        String primary;
+        String backup;
+
+        ProviderSelection(String primary, String backup) {
+            this.primary = primary;
+            this.backup = backup;
+        }
     }
 
     private void goOnboarding(int step) {
