@@ -3112,7 +3112,9 @@ public final class MainActivity extends Activity {
                                 runOnUiThread(new Runnable() {
                                     @Override public void run() {
                                         selectedDay = day;
-                                        setStatus(count > 0 ? "Reprocessed " + count + " batches." : "No existing batches found; scanned for new screenshots.");
+                                        setStatus(count < 0
+                                                ? "Analysis is already running. Try reprocess again after it finishes."
+                                                : (count > 0 ? "Reprocessed " + count + " batches." : "No existing batches found; scanned for new screenshots."));
                                         refresh();
                                     }
                                 });

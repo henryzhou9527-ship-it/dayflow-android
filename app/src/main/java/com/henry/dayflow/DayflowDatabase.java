@@ -278,6 +278,27 @@ final class DayflowDatabase extends SQLiteOpenHelper {
         }
     }
 
+    synchronized List<Long> retryableBatchIds(long retryBeforeMs, int limit) {
+        String sql = "SELECT b.id FROM analysis_batches b " +
+                "LEFT JOIN (SELECT batch_id, MAX(created_at) AS latest_log_at FROM llm_calls WHERE batch_id IS NOT NULL GROUP BY batch_id) l " +
+                "ON l.batch_id = b.id " +
+                "WHERE b.status IN ('pending', 'processing', 'failed') " +
+                "AND b.batch_end_ts < ? " +
+                "AND (l.latest_log_at IS NULL OR l.latest_log_at < ?) " +
+                "ORDER BY b.batch_start_ts ASC LIMIT ?";
+        Cursor c = getReadableDatabase().rawQuery(sql, new String[]{
+                String.valueOf(System.currentTimeMillis() - TimeUtil.MINUTE),
+                String.valueOf(retryBeforeMs),
+                String.valueOf(Math.max(1, limit))});
+        try {
+            List<Long> ids = new ArrayList<>();
+            while (c.moveToNext()) ids.add(c.getLong(0));
+            return ids;
+        } finally {
+            c.close();
+        }
+    }
+
     synchronized long saveBatch(long startMs, long endMs, List<ScreenshotRecord> screenshots) {
         if (screenshots.isEmpty()) return -1L;
         SQLiteDatabase db = getWritableDatabase();

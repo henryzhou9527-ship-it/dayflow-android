@@ -8,6 +8,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 final class AnalysisEngine {
     private static final AtomicBoolean PROCESSING = new AtomicBoolean(false);
+    private static final long RETRY_COOLDOWN_MS = 15 * TimeUtil.MINUTE;
+    private static final int RETRY_LIMIT = 2;
 
     private final Context context;
     private final DayflowDatabase db;
@@ -30,6 +32,7 @@ final class AnalysisEngine {
                 long batchId = db.saveBatch(batch.startMs, batch.endMs, batch.screenshots);
                 if (batchId > 0) analyzeBatch(batchId);
             }
+            retryStaleBatches();
             ReadyNotificationCenter.checkAfterAnalysis(context);
         } finally {
             PROCESSING.set(false);
@@ -37,7 +40,7 @@ final class AnalysisEngine {
     }
 
     int reprocessDay(String day) {
-        if (!PROCESSING.compareAndSet(false, true)) return 0;
+        if (!PROCESSING.compareAndSet(false, true)) return -1;
         try {
             List<Long> batchIds = db.batchIdsForDay(day);
             db.deleteTimelineDay(day);
@@ -48,6 +51,7 @@ final class AnalysisEngine {
                     long batchId = db.saveBatch(batch.startMs, batch.endMs, batch.screenshots);
                     if (batchId > 0) analyzeBatch(batchId);
                 }
+                retryStaleBatches();
                 ReadyNotificationCenter.checkAfterAnalysis(context);
                 return 0;
             }
@@ -59,6 +63,14 @@ final class AnalysisEngine {
             return batchIds.size();
         } finally {
             PROCESSING.set(false);
+        }
+    }
+
+    private void retryStaleBatches() {
+        long retryBeforeMs = System.currentTimeMillis() - RETRY_COOLDOWN_MS;
+        for (Long batchId : db.retryableBatchIds(retryBeforeMs, RETRY_LIMIT)) {
+            db.resetBatchForReprocess(batchId);
+            analyzeBatch(batchId);
         }
     }
 
