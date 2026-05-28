@@ -35,7 +35,8 @@ public final class JournalReminderReceiver extends BroadcastReceiver {
         createChannel(context);
 
         Intent open = new Intent(context, MainActivity.class)
-                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .putExtra(MainActivity.EXTRA_OPEN_TAB, "Journal");
         PendingIntent openIntent = PendingIntent.getActivity(
                 context,
                 4201,

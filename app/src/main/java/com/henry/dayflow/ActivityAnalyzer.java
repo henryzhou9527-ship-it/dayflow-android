@@ -6,9 +6,7 @@ import android.util.Base64;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -486,14 +484,7 @@ final class GeminiActivityAnalyzer implements ActivityAnalyzer {
         out.write(json.getBytes(StandardCharsets.UTF_8));
         out.close();
 
-        InputStream in = connection.getResponseCode() >= 400 ? connection.getErrorStream() : connection.getInputStream();
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-        byte[] chunk = new byte[8192];
-        int read;
-        while ((read = in.read(chunk)) != -1) buffer.write(chunk, 0, read);
-        String response = buffer.toString("UTF-8");
-        if (connection.getResponseCode() >= 400) throw new IllegalStateException(response);
-        return response;
+        return HttpResponseReader.readOrThrow(connection);
     }
 
     private static String extractGeminiText(String response) throws Exception {
@@ -692,13 +683,6 @@ final class OllamaActivityAnalyzer implements ActivityAnalyzer {
         out.write(json.getBytes(StandardCharsets.UTF_8));
         out.close();
 
-        InputStream in = connection.getResponseCode() >= 400 ? connection.getErrorStream() : connection.getInputStream();
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-        byte[] chunk = new byte[8192];
-        int read;
-        while ((read = in.read(chunk)) != -1) buffer.write(chunk, 0, read);
-        String response = buffer.toString("UTF-8");
-        if (connection.getResponseCode() >= 400) throw new IllegalStateException(response);
-        return response;
+        return HttpResponseReader.readOrThrow(connection);
     }
 }
