@@ -2746,6 +2746,12 @@ public final class MainActivity extends Activity {
         panel.addView(clear, new LinearLayout.LayoutParams(-1, dp(42)));
 
         panel.addView(text("Recording cadence", 13, Colors.MUTED, true));
+        panel.addView(text(cadenceSummary(), 14, Colors.TEXT, false));
+        LinearLayout presets = row();
+        presets.addView(cadencePresetButton("Dayflow", 10 * TimeUtil.SECOND, 15 * TimeUtil.MINUTE, 2 * TimeUtil.MINUTE, 45 * TimeUtil.MINUTE), new LinearLayout.LayoutParams(0, dp(40), 1));
+        presets.addView(cadencePresetButton("Fast", 5 * TimeUtil.SECOND, 5 * TimeUtil.MINUTE, TimeUtil.MINUTE, 20 * TimeUtil.MINUTE), new LinearLayout.LayoutParams(0, dp(40), 1));
+        presets.addView(cadencePresetButton("Battery", 30 * TimeUtil.SECOND, 30 * TimeUtil.MINUTE, 4 * TimeUtil.MINUTE, 60 * TimeUtil.MINUTE), new LinearLayout.LayoutParams(0, dp(40), 1));
+        panel.addView(presets);
         final EditText screenshotInterval = field("Screenshot interval seconds", String.valueOf(prefs.screenshotIntervalMs() / TimeUtil.SECOND), true);
         final EditText batchMinutes = field("Batch target minutes", String.valueOf(prefs.targetBatchMs() / TimeUtil.MINUTE), true);
         final EditText maxGapMinutes = field("Max gap minutes", String.valueOf(prefs.maxGapMs() / TimeUtil.MINUTE), true);
@@ -2761,15 +2767,54 @@ public final class MainActivity extends Activity {
         Button save = pillButton("Save recording cadence");
         save.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
-                prefs.setScreenshotIntervalMs(parseInt(screenshotInterval.getText().toString(), (int) (prefs.screenshotIntervalMs() / TimeUtil.SECOND)) * TimeUtil.SECOND);
-                prefs.setTargetBatchMs(parseInt(batchMinutes.getText().toString(), (int) (prefs.targetBatchMs() / TimeUtil.MINUTE)) * TimeUtil.MINUTE);
-                prefs.setMaxGapMs(parseInt(maxGapMinutes.getText().toString(), (int) (prefs.maxGapMs() / TimeUtil.MINUTE)) * TimeUtil.MINUTE);
-                prefs.setCardLookbackMs(parseInt(lookbackMinutes.getText().toString(), (int) (prefs.cardLookbackMs() / TimeUtil.MINUTE)) * TimeUtil.MINUTE);
+                saveRecordingCadence(
+                        parseInt(screenshotInterval.getText().toString(), (int) (prefs.screenshotIntervalMs() / TimeUtil.SECOND)) * TimeUtil.SECOND,
+                        parseInt(batchMinutes.getText().toString(), (int) (prefs.targetBatchMs() / TimeUtil.MINUTE)) * TimeUtil.MINUTE,
+                        parseInt(maxGapMinutes.getText().toString(), (int) (prefs.maxGapMs() / TimeUtil.MINUTE)) * TimeUtil.MINUTE,
+                        parseInt(lookbackMinutes.getText().toString(), (int) (prefs.cardLookbackMs() / TimeUtil.MINUTE)) * TimeUtil.MINUTE);
                 setStatus("Recording cadence saved.");
                 refresh();
             }
         });
         panel.addView(save, new LinearLayout.LayoutParams(-1, dp(44)));
+    }
+
+    private Button cadencePresetButton(String label, final long screenshotMs, final long batchMs, final long maxGapMs, final long lookbackMs) {
+        Button button = cadenceMatches(screenshotMs, batchMs, maxGapMs, lookbackMs) ? pillButton(label) : smallButton(label);
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                saveRecordingCadence(screenshotMs, batchMs, maxGapMs, lookbackMs);
+                setStatus("Recording cadence saved.");
+                refresh();
+            }
+        });
+        return button;
+    }
+
+    private boolean cadenceMatches(long screenshotMs, long batchMs, long maxGapMs, long lookbackMs) {
+        return prefs.screenshotIntervalMs() == screenshotMs
+                && prefs.targetBatchMs() == batchMs
+                && prefs.maxGapMs() == maxGapMs
+                && prefs.cardLookbackMs() == lookbackMs;
+    }
+
+    private void saveRecordingCadence(long screenshotMs, long batchMs, long maxGapMs, long lookbackMs) {
+        prefs.setScreenshotIntervalMs(screenshotMs);
+        prefs.setTargetBatchMs(batchMs);
+        prefs.setMaxGapMs(maxGapMs);
+        prefs.setCardLookbackMs(lookbackMs);
+    }
+
+    private String cadenceSummary() {
+        return "Capture every " + cadenceDuration(prefs.screenshotIntervalMs())
+                + " · summary every " + cadenceDuration(prefs.targetBatchMs())
+                + "\nSplit after " + cadenceDuration(prefs.maxGapMs())
+                + " idle gap · rewrite last " + cadenceDuration(prefs.cardLookbackMs());
+    }
+
+    private static String cadenceDuration(long ms) {
+        if (ms < TimeUtil.MINUTE) return Math.max(1L, ms / TimeUtil.SECOND) + "s";
+        return TimeUtil.shortDuration(ms);
     }
 
     private String accessibilityContextStatus() {

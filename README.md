@@ -36,7 +36,7 @@ An Android-native Dayflow prototype: private screen journal, local-first storage
 - Journal uses an original-style two-page board for intentions, notes, long-term goals, reflections, and Dayflow-generated daily summaries.
 - Redacts screenshots for blocked apps while still preserving timeline continuity.
 - New screenshot files are encrypted at rest; older plaintext captures remain readable for analysis, previews, and timelapses.
-- Recording/privacy settings include per-app blocking, optional window-context capture, capture cadence, batch size, max gap, and card lookback controls.
+- Recording/privacy settings include per-app blocking, optional window-context capture, Dayflow/Fast/Battery cadence presets, batch size, max gap, and card lookback controls.
 - Supports timed/indefinite recording pauses and shows saved screenshots plus playable timelapses inside review cards for frame-by-frame context.
 - Review includes Dayflow's focused/neutral/distracted summary bars, cards-to-review progress, last-reviewed state, undo, current-rating chips, and Android-native left/up/right swipe rating.
 - Review cards include an Android-native touch scrubber that mirrors Dayflow's media review behavior with tap-to-play and drag-to-seek interactions.
