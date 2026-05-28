@@ -480,9 +480,10 @@ final class DashboardCanvasView extends View {
 
     private void drawMetricCard(Canvas c, float x, float y, float w, float h, String label, String value, String sub) {
         drawPanel(c, x, y, w, h);
+        float innerW = Math.max(1f, w - dp(36));
         drawSans(c, label, x + dp(18), y + dp(34), dp(13), Colors.MUTED, true);
-        drawSerif(c, value, x + dp(18), y + dp(82), dp(33), Colors.TEXT);
-        if (sub != null) drawSans(c, sub, x + dp(18), y + dp(112), dp(14), Colors.TEXT, false);
+        drawSerifFit(c, value, x + dp(18), y + dp(82), innerW, dp(33), dp(22), Colors.TEXT);
+        if (sub != null) drawSans(c, fitText(sub, innerW, dp(14), false), x + dp(18), y + dp(112), dp(14), Colors.TEXT, false);
     }
 
     private void drawCategoryChart(Canvas c, float x, float y, float w, float h) {
@@ -546,12 +547,38 @@ final class DashboardCanvasView extends View {
         paint.setFakeBoldText(false);
         c.drawText(text, x, y, paint);
     }
+    private void drawSerifFit(Canvas c, String text, float x, float y, float maxWidth, float startSize, float minSize, int color) {
+        paint.setTypeface(DayflowType.serif(getContext()));
+        paint.setColor(color);
+        paint.setFakeBoldText(false);
+        String value = text == null ? "" : text.trim();
+        float size = startSize;
+        while (size > minSize) {
+            paint.setTextSize(size);
+            if (paint.measureText(value) <= maxWidth) break;
+            size -= dp(1);
+        }
+        paint.setTextSize(size);
+        if (paint.measureText(value) > maxWidth) value = fitText(value, maxWidth, size, true);
+        c.drawText(value, x, y, paint);
+    }
     private void drawSans(Canvas c, String text, float x, float y, float size, int color, boolean caps) {
         paint.setTypeface(DayflowType.sans(getContext(), caps));
         paint.setTextSize(size);
         paint.setColor(color);
         paint.setFakeBoldText(false);
         c.drawText(text, x, y, paint);
+    }
+    private String fitText(String raw, float maxWidth, float textSize, boolean serif) {
+        String value = raw == null ? "" : raw.trim();
+        paint.setTypeface(serif ? DayflowType.serif(getContext()) : DayflowType.sans(getContext(), false));
+        paint.setTextSize(textSize);
+        paint.setFakeBoldText(false);
+        if (paint.measureText(value) <= maxWidth) return value;
+        String suffix = "...";
+        int end = value.length();
+        while (end > 1 && paint.measureText(value.substring(0, end) + suffix) > maxWidth) end--;
+        return value.substring(0, Math.max(1, end)) + suffix;
     }
 }
 
