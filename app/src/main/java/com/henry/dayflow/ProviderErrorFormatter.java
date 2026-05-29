@@ -31,6 +31,9 @@ final class ProviderErrorFormatter {
             if (containsAny(lower, "no choices", "no text", "empty text", "no cards")) {
                 return "Custom API answered but did not return usable chat/vision text. Try a vision-capable OpenAI-compatible model.";
             }
+            if (containsAny(lower, "not openai-compatible", "cannot be converted to jsonobject", "jsonexception", "response format")) {
+                return "Custom API answered, but the response is not OpenAI-compatible chat format. Check that the endpoint is a /v1/chat/completions-compatible URL and the model supports chat/vision.";
+            }
             return "Custom API failed: " + shortError(type, message);
         }
 

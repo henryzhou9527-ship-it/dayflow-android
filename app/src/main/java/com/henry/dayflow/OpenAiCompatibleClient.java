@@ -98,7 +98,11 @@ final class OpenAiCompatibleClient {
         if (!output.trim().isEmpty()) return output.trim();
         JSONArray choices = root.optJSONArray("choices");
         if (choices == null || choices.length() == 0) throw new IllegalStateException("Custom API returned no choices");
-        JSONObject choice = choices.getJSONObject(0);
+        Object firstChoice = choices.opt(0);
+        if (!(firstChoice instanceof JSONObject)) {
+            throw new IllegalStateException("Custom API response format is not OpenAI-compatible");
+        }
+        JSONObject choice = (JSONObject) firstChoice;
         JSONObject message = choice.optJSONObject("message");
         if (message != null) {
             Object content = message.opt("content");

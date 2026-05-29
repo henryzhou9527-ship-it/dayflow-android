@@ -16,6 +16,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.media.projection.MediaProjectionConfig;
 import android.media.projection.MediaProjectionManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -189,9 +190,7 @@ public final class MainActivity extends Activity {
             @Override public void onClick(View view) {
                 startService(new Intent(MainActivity.this, CaptureService.class).setAction(CaptureService.ACTION_STOP));
                 setStatus("Recording stopped.");
-                statusText.postDelayed(new Runnable() {
-                    @Override public void run() { refresh(); }
-                }, 500);
+                refreshSoon(500);
             }
         });
         header.addView(stop, new LinearLayout.LayoutParams(dp(42), dp(42)));
@@ -282,6 +281,15 @@ public final class MainActivity extends Activity {
         if ("Chat".equals(selectedTab)) renderChat(metrics);
         if ("Categories".equals(selectedTab)) renderCategories();
         if ("Settings".equals(selectedTab)) renderSettings();
+    }
+
+    private void refreshSoon(long delayMs) {
+        if (statusText == null) return;
+        statusText.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (!isFinishing()) refresh();
+            }
+        }, delayMs);
     }
 
     private void addAnalysisNoticeIfNeeded() {
@@ -980,6 +988,8 @@ public final class MainActivity extends Activity {
         long cappedMs = Math.min(DAILY_REQUIRED_MS, Math.max(0L, analyzedMs));
         boolean ready = analyzedMs >= DAILY_REQUIRED_MS;
         float progress = cappedMs / (float) DAILY_REQUIRED_MS;
+        final CaptureHealth captureHealth = prefs.captureHealth();
+        boolean captureActive = captureHealth.recentlyAlive(prefs.screenshotIntervalMs());
 
         LinearLayout panel = panel();
         panel.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -997,7 +1007,7 @@ public final class MainActivity extends Activity {
         checks.setPadding(0, dp(8), 0, dp(8));
         checks.addView(text("READINESS", 12, Colors.MUTED, true));
         checks.addView(text("Usage Access: " + (appReader.hasUsageAccess() ? "enabled" : "needed")
-                + "\nScreen capture: start when you are ready"
+                + "\nScreen capture: " + captureHealthHeadline(captureHealth)
                 + "\nNotifications: " + (hasNotificationPermission() ? "enabled" : "needed")
                 + "\nDaily provider: " + prefs.provider(), 14, Colors.TEXT, false));
         panel.addView(checks);
@@ -1046,10 +1056,13 @@ public final class MainActivity extends Activity {
         usage.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) { openSystemPage(appReader.usageAccessIntent(), "Opening Usage Access settings..."); }
         });
-        Button capture = smallButton("Start capture");
-        capture.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { requestScreenCapture(); }
-        });
+        Button capture = smallButton(captureActive ? "Capture active" : (captureHealth.serviceStartedAtMs > 0 ? "Restart capture" : "Start capture"));
+        capture.setEnabled(!captureActive);
+        if (!captureActive) {
+            capture.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View view) { requestScreenCapture(); }
+            });
+        }
         Button analyze = smallButton("Analyze now");
         analyze.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
@@ -1727,6 +1740,8 @@ public final class MainActivity extends Activity {
         long analyzedMs = db.analyzedBatchDurationMs();
         long cappedMs = Math.min(WEEKLY_REQUIRED_MS, Math.max(0L, analyzedMs));
         float progress = cappedMs / (float) WEEKLY_REQUIRED_MS;
+        final CaptureHealth captureHealth = prefs.captureHealth();
+        boolean captureActive = captureHealth.recentlyAlive(prefs.screenshotIntervalMs());
 
         LinearLayout panel = panel();
         panel.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -1750,7 +1765,7 @@ public final class MainActivity extends Activity {
 
         panel.addView(text("READINESS", 12, Colors.MUTED, true));
         panel.addView(text("Usage Access: " + (appReader.hasUsageAccess() ? "enabled" : "needed")
-                + "\nScreen capture: " + captureHealthHeadline(prefs.captureHealth())
+                + "\nScreen capture: " + captureHealthHeadline(captureHealth)
                 + "\nNotifications: " + (hasNotificationPermission() ? "enabled" : "needed")
                 + "\nRemaining time: " + TimeUtil.shortDuration(WEEKLY_REQUIRED_MS - cappedMs), 14, Colors.TEXT, false));
 
@@ -1764,10 +1779,13 @@ public final class MainActivity extends Activity {
                 refresh();
             }
         });
-        Button capture = smallButton("Start capture");
-        capture.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { requestScreenCapture(); }
-        });
+        Button capture = smallButton(captureActive ? "Capture active" : (captureHealth.serviceStartedAtMs > 0 ? "Restart capture" : "Start capture"));
+        capture.setEnabled(!captureActive);
+        if (!captureActive) {
+            capture.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View view) { requestScreenCapture(); }
+            });
+        }
         actions.addView(notify, new LinearLayout.LayoutParams(0, dp(44), 1));
         actions.addView(capture, new LinearLayout.LayoutParams(dp(112), dp(44)));
         panel.addView(actions);
@@ -2356,27 +2374,27 @@ public final class MainActivity extends Activity {
     }
 
     private void addSettingsSectionSelector(LinearLayout panel, String selected) {
-        HorizontalScrollView scroll = new HorizontalScrollView(this);
-        scroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(0, dp(6), 0, dp(12));
-        scroll.addView(row, new HorizontalScrollView.LayoutParams(-2, dp(58)));
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        wrap.setPadding(0, dp(6), 0, dp(12));
         String[] sections = new String[]{"Profile", "Storage", "Privacy", "Providers", "Export", "Other"};
-        for (String section : sections) {
-            Button button = section.equals(selected) ? pillButton(section) : smallButton(section);
-            final String target = section;
-            button.setOnClickListener(new View.OnClickListener() {
-                @Override public void onClick(View view) {
-                    prefs.setSettingsSection(target);
-                    refresh();
-                }
-            });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(96), dp(40));
-            lp.setMargins(0, 0, dp(8), 0);
-            row.addView(button, lp);
+        for (int i = 0; i < sections.length; i += 3) {
+            LinearLayout row = row();
+            for (int j = i; j < Math.min(i + 3, sections.length); j++) {
+                String section = sections[j];
+                Button button = section.equals(selected) ? pillButton(section) : smallButton(section);
+                final String target = section;
+                button.setOnClickListener(new View.OnClickListener() {
+                    @Override public void onClick(View view) {
+                        prefs.setSettingsSection(target);
+                        refresh();
+                    }
+                });
+                row.addView(button, new LinearLayout.LayoutParams(0, dp(40), 1));
+            }
+            wrap.addView(row, new LinearLayout.LayoutParams(-1, dp(52)));
         }
-        panel.addView(scroll);
+        panel.addView(wrap);
     }
 
     private String settingsSection() {
@@ -2736,7 +2754,13 @@ public final class MainActivity extends Activity {
                 } catch (final Exception error) {
                     runOnUiThread(new Runnable() {
                         @Override public void run() {
-                            setStatus("Provider test failed: " + shortText(ProviderErrorFormatter.describe(provider, error), 120));
+                            String message = ProviderErrorFormatter.describe(provider, error);
+                            setStatus("Provider test needs attention.");
+                            new AlertDialog.Builder(MainActivity.this)
+                                    .setTitle("Provider test failed")
+                                    .setMessage(message)
+                                    .setPositiveButton("OK", null)
+                                    .show();
                         }
                     });
                 }
@@ -4497,8 +4521,15 @@ public final class MainActivity extends Activity {
             setStatus("Screen capture is unavailable on this device.");
             return;
         }
-        setStatus("Choose Share entire screen in the Android prompt, then tap Share screen.");
-        startActivityForResult(manager.createScreenCaptureIntent(), REQ_MEDIA_PROJECTION);
+        Intent captureIntent;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            captureIntent = manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay());
+            setStatus("Tap Share screen in the Android prompt to start full-screen capture.");
+        } else {
+            captureIntent = manager.createScreenCaptureIntent();
+            setStatus("Choose Share entire screen in the Android prompt, then tap Share screen.");
+        }
+        startActivityForResult(captureIntent, REQ_MEDIA_PROJECTION);
     }
 
     private void startCaptureService(Intent service) {
@@ -4509,6 +4540,8 @@ public final class MainActivity extends Activity {
                 startService(service);
             }
             setStatus("Recording started. A full Dayflow card appears after the first analysis batch.");
+            refreshSoon(1500);
+            refreshSoon(6000);
         } catch (Exception error) {
             String message = shortText(error.getClass().getSimpleName() + ": " + error.getMessage(), 120);
             prefs.markCaptureError("Recording could not start: " + message);
